@@ -5,6 +5,11 @@ window.GraNotes = window.GraNotes || {};
 GraNotes.UI = (function() {
     
     let selectedIndex = 0;
+    
+    // ★ プレビュー再生用のオーディオオブジェクト
+    let previewAudio = new Audio();
+    previewAudio.volume = 0.5; // プレビューは音量を少し下げる
+    let isPreviewAllowed = false; // ブラウザの自動再生ブロック回避フラグ
 
     function build() {
         const app = document.getElementById('app');
@@ -79,13 +84,11 @@ GraNotes.UI = (function() {
             </div>
         `;
 
-        // 要素の取得と初期化
         const diffSelect = document.getElementById('diff-select');
         const screenTitle = document.getElementById('screen-title');
         const screenResult = document.getElementById('screen-result');
         const btnRestart = document.getElementById('btn-restart');
         
-        // 難易度ボタンの動的生成
         const diffKeys = Object.keys(GraNotes.DIFFICULTIES);
         diffKeys.forEach(key => {
             const diff = GraNotes.DIFFICULTIES[key];
@@ -98,22 +101,60 @@ GraNotes.UI = (function() {
 
         GraNotes.Game.init(document.getElementById('game-canvas'));
 
-        // --- ★ カルーセルの初期化とスワイプ処理 ---
         updateCarousel();
         setupCarouselEvents();
 
-        // リスタートボタン
+        // ★ ブラウザの自動再生ブロックを解除するため、ユーザーが画面を触った瞬間にフラグを立てる
+        const enablePreview = () => {
+            if (!isPreviewAllowed) {
+                isPreviewAllowed = true;
+                playPreview();
+            }
+        };
+        window.addEventListener('mousedown', enablePreview, { once: true });
+        window.addEventListener('touchstart', enablePreview, { once: true });
+
+        // リスタートボタン（リザルトからタイトルへ戻る）
         btnRestart.addEventListener('click', () => {
             screenResult.classList.add('hidden');
             screenTitle.classList.remove('hidden');
             document.getElementById('diff-select').classList.remove('hidden');
             document.getElementById('loading-msg').classList.add('hidden');
+            // ★ タイトルに戻ったらプレビューを再開
+            playPreview();
         });
 
         window.dispatchEvent(new Event('resize'));
     }
 
-    // カルーセルの表示更新
+    // --- ★ プレビュー再生コントロール ---
+    function playPreview() {
+        if (!isPreviewAllowed) return; // ユーザーがまだ画面に触れていない場合は鳴らさない
+        
+        const music = GraNotes.MusicList[selectedIndex];
+        if (!music) return;
+
+        // すでに再生中の曲でなければソースを切り替える
+        if (!previewAudio.src.endsWith(`${music.filename}.mp3`)) {
+            previewAudio.src = `music/${music.filename}.mp3`;
+        }
+        
+        // プレビュー開始位置にセットして再生
+        previewAudio.currentTime = music.previewStart;
+        previewAudio.play().catch(e => console.log("プレビュー再生がブロックされました:", e));
+
+        // ループ区間の監視 (指定した終了秒数を超えたら開始位置に戻す)
+        previewAudio.ontimeupdate = () => {
+            if (previewAudio.currentTime >= music.previewEnd) {
+                previewAudio.currentTime = music.previewStart;
+            }
+        };
+    }
+
+    function stopPreview() {
+        previewAudio.pause();
+    }
+
     function updateCarousel() {
         const musicList = GraNotes.MusicList;
         if (!musicList || musicList.length === 0) return;
@@ -122,24 +163,22 @@ GraNotes.UI = (function() {
         const prevIdx = (selectedIndex - 1 + total) % total;
         const nextIdx = (selectedIndex + 1) % total;
         
-        // アルバムアート画像の設定
         document.getElementById('item-prev').style.backgroundImage = `url('music/${musicList[prevIdx].filename}.png')`;
         document.getElementById('item-current').style.backgroundImage = `url('music/${musicList[selectedIndex].filename}.png')`;
         document.getElementById('item-next').style.backgroundImage = `url('music/${musicList[nextIdx].filename}.png')`;
         
-        // 背景画像の設定
         document.getElementById('select-bg').style.backgroundImage = `url('music/${musicList[selectedIndex].filename}.png')`;
         
-        // テキストの設定
         document.getElementById('music-title').textContent = musicList[selectedIndex].title;
         document.getElementById('music-bpm').textContent = `BPM: ${musicList[selectedIndex].bpm}`;
         document.getElementById('music-desc').textContent = musicList[selectedIndex].description;
         
-        // 選択された曲のインデックスを保存
         GraNotes.State.selectedMusicIndex = selectedIndex;
+
+        // ★ カルーセルが回ったら新しい曲のプレビューを再生
+        playPreview();
     }
 
-    // カルーセルのスワイプ・ドラッグ・ホイールイベント登録
     function setupCarouselEvents() {
         const carousel = document.getElementById('carousel-container');
         let startY = 0;
@@ -149,29 +188,26 @@ GraNotes.UI = (function() {
         function handleMove(y) {
             if (!isDragging) return;
             const diff = y - startY;
-            if (diff > 50) { // 下スワイプ -> 前の曲へ
+            if (diff > 50) { 
                 selectedIndex = (selectedIndex - 1 + listLength) % listLength;
                 updateCarousel();
                 isDragging = false;
-            } else if (diff < -50) { // 上スワイプ -> 次の曲へ
+            } else if (diff < -50) { 
                 selectedIndex = (selectedIndex + 1) % listLength;
                 updateCarousel();
                 isDragging = false;
             }
         }
 
-        // マウス
         carousel.addEventListener('mousedown', e => { startY = e.clientY; isDragging = true; });
         window.addEventListener('mousemove', e => { handleMove(e.clientY); });
         window.addEventListener('mouseup', () => { isDragging = false; });
         
-        // タッチ
         carousel.addEventListener('touchstart', e => { startY = e.touches[0].clientY; isDragging = true; }, {passive: true});
         carousel.addEventListener('touchmove', e => { handleMove(e.touches[0].clientY); }, {passive: true});
         window.addEventListener('touchend', () => { isDragging = false; });
         window.addEventListener('touchcancel', () => { isDragging = false; });
 
-        // マウスホイール
         let wheelTimeout;
         carousel.addEventListener('wheel', e => {
             if (wheelTimeout) return;
@@ -182,18 +218,14 @@ GraNotes.UI = (function() {
                 selectedIndex = (selectedIndex - 1 + listLength) % listLength;
                 updateCarousel();
             }
-            wheelTimeout = setTimeout(() => { wheelTimeout = null; }, 300); // 連続発動防止
+            wheelTimeout = setTimeout(() => { wheelTimeout = null; }, 300); 
         }, {passive: true});
     }
 
-    // 指定されたURLからMP3ファイルを読み込む
-    async function fetchMusicBuffer(filename) {
-        const response = await fetch(`music/${filename}.mp3`);
-        if (!response.ok) throw new Error("楽曲ファイルが見つかりません: " + filename);
-        return await response.arrayBuffer();
-    }
-
     async function startGameWithDifficulty(minIntervalBeat) {
+        // ★ ゲームを開始したらプレビュー音声を止める
+        stopPreview();
+
         const loadingMsg = document.getElementById('loading-msg');
         const diffSelect = document.getElementById('diff-select');
         
@@ -205,9 +237,8 @@ GraNotes.UI = (function() {
         try {
             const state = GraNotes.State;
             const music = GraNotes.MusicList[selectedIndex];
-            const manualBpm = music.bpm; // 音楽リストに登録されたBPMを使用
+            const manualBpm = music.bpm; 
             
-            // AudioContextの初期化と再開処理 (ブラウザの自動再生ポリシー対応)
             if (!state.audioContext) {
                 state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
@@ -215,8 +246,10 @@ GraNotes.UI = (function() {
                 await state.audioContext.resume();
             }
 
-            // MP3データの取得
-            const arrayBuffer = await fetchMusicBuffer(music.filename);
+            // プレイ用のAudioBufferを取得 (fetch)
+            const response = await fetch(`music/${music.filename}.mp3`);
+            if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
+            const arrayBuffer = await response.arrayBuffer();
             
             loadingMsg.textContent = "音声をデコード中...";
             state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
@@ -225,7 +258,6 @@ GraNotes.UI = (function() {
             setTimeout(async () => {
                 try {
                     const maxSliderIntervalBeat = minIntervalBeat * 3.0; 
-                    // 解析エンジンに登録されたBPMを渡して譜面生成
                     await GraNotes.Analyzer.generateMap(state.audioBuffer, minIntervalBeat, maxSliderIntervalBeat, manualBpm);
                     
                     document.getElementById('screen-title').classList.add('hidden');
@@ -239,18 +271,20 @@ GraNotes.UI = (function() {
                     setTimeout(() => {
                         loadingMsg.classList.add('hidden');
                         diffSelect.classList.remove('hidden');
+                        playPreview(); // エラーで戻った場合もプレビュー再開
                     }, 3000);
                 }
             }, 50);
 
         } catch (err) {
             console.error("楽曲ロードエラー:", err);
-            loadingMsg.textContent = err.message;
+            loadingMsg.textContent = "エラー: " + err.message;
             loadingMsg.style.color = "#ef4444"; 
             
             setTimeout(() => {
                 loadingMsg.classList.add('hidden');
                 diffSelect.classList.remove('hidden');
+                playPreview(); // エラーで戻った場合もプレビュー再開
             }, 3000);
         }
     }
