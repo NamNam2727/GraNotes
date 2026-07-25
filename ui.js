@@ -6,10 +6,13 @@ GraNotes.UI = (function() {
     
     let selectedIndex = 0;
     
-    // ★ プレビュー再生用のオーディオオブジェクト
+    // プレビュー再生用のオーディオオブジェクト
     let previewAudio = new Audio();
-    previewAudio.volume = 0.5; // プレビューは音量を少し下げる
-    let isPreviewAllowed = false; // ブラウザの自動再生ブロック回避フラグ
+    let isPreviewAllowed = false; 
+    
+    // ★ プレビューの最大音量とフェードにかける時間（秒）
+    const PREVIEW_MAX_VOLUME = 0.5;
+    const FADE_DURATION = 2.0; 
 
     function build() {
         const app = document.getElementById('app');
@@ -104,7 +107,6 @@ GraNotes.UI = (function() {
         updateCarousel();
         setupCarouselEvents();
 
-        // ★ ブラウザの自動再生ブロックを解除するため、ユーザーが画面を触った瞬間にフラグを立てる
         const enablePreview = () => {
             if (!isPreviewAllowed) {
                 isPreviewAllowed = true;
@@ -114,44 +116,66 @@ GraNotes.UI = (function() {
         window.addEventListener('mousedown', enablePreview, { once: true });
         window.addEventListener('touchstart', enablePreview, { once: true });
 
-        // リスタートボタン（リザルトからタイトルへ戻る）
         btnRestart.addEventListener('click', () => {
             screenResult.classList.add('hidden');
             screenTitle.classList.remove('hidden');
             document.getElementById('diff-select').classList.remove('hidden');
             document.getElementById('loading-msg').classList.add('hidden');
-            // ★ タイトルに戻ったらプレビューを再開
             playPreview();
         });
 
         window.dispatchEvent(new Event('resize'));
     }
 
-    // --- ★ プレビュー再生コントロール ---
+    // --- ★ プレビュー再生コントロール (フェードイン・フェードアウト対応) ---
     function playPreview() {
-        if (!isPreviewAllowed) return; // ユーザーがまだ画面に触れていない場合は鳴らさない
+        if (!isPreviewAllowed) return; 
         
         const music = GraNotes.MusicList[selectedIndex];
         if (!music) return;
 
-        // すでに再生中の曲でなければソースを切り替える
         if (!previewAudio.src.endsWith(`${music.filename}.mp3`)) {
             previewAudio.src = `music/${music.filename}.mp3`;
         }
         
-        // プレビュー開始位置にセットして再生
+        // 再生位置と音量を初期化
         previewAudio.currentTime = music.previewStart;
+        previewAudio.volume = 0; // 音量0からスタート
+        
         previewAudio.play().catch(e => console.log("プレビュー再生がブロックされました:", e));
 
-        // ループ区間の監視 (指定した終了秒数を超えたら開始位置に戻す)
+        // 毎フレームの再生時間を監視して音量を調整
         previewAudio.ontimeupdate = () => {
-            if (previewAudio.currentTime >= music.previewEnd) {
-                previewAudio.currentTime = music.previewStart;
+            const current = previewAudio.currentTime;
+            const start = music.previewStart;
+            const end = music.previewEnd;
+
+            // ループ処理 (終了時間を超えたら最初に戻す)
+            if (current >= end) {
+                previewAudio.currentTime = start;
+                previewAudio.volume = 0;
+                return;
+            }
+
+            // フェードイン (開始からFADE_DURATION秒間)
+            if (current >= start && current < start + FADE_DURATION) {
+                let progress = (current - start) / FADE_DURATION;
+                previewAudio.volume = Math.min(progress * PREVIEW_MAX_VOLUME, PREVIEW_MAX_VOLUME);
+            } 
+            // フェードアウト (終了のFADE_DURATION秒前から)
+            else if (current <= end && current > end - FADE_DURATION) {
+                let progress = (end - current) / FADE_DURATION;
+                previewAudio.volume = Math.max(progress * PREVIEW_MAX_VOLUME, 0);
+            } 
+            // 通常再生（フェード中以外）
+            else {
+                previewAudio.volume = PREVIEW_MAX_VOLUME;
             }
         };
     }
 
     function stopPreview() {
+        // ゲーム開始時は即座にプレビューを止める
         previewAudio.pause();
     }
 
@@ -175,7 +199,6 @@ GraNotes.UI = (function() {
         
         GraNotes.State.selectedMusicIndex = selectedIndex;
 
-        // ★ カルーセルが回ったら新しい曲のプレビューを再生
         playPreview();
     }
 
@@ -223,7 +246,6 @@ GraNotes.UI = (function() {
     }
 
     async function startGameWithDifficulty(minIntervalBeat) {
-        // ★ ゲームを開始したらプレビュー音声を止める
         stopPreview();
 
         const loadingMsg = document.getElementById('loading-msg');
@@ -246,7 +268,6 @@ GraNotes.UI = (function() {
                 await state.audioContext.resume();
             }
 
-            // プレイ用のAudioBufferを取得 (fetch)
             const response = await fetch(`music/${music.filename}.mp3`);
             if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
             const arrayBuffer = await response.arrayBuffer();
@@ -271,7 +292,7 @@ GraNotes.UI = (function() {
                     setTimeout(() => {
                         loadingMsg.classList.add('hidden');
                         diffSelect.classList.remove('hidden');
-                        playPreview(); // エラーで戻った場合もプレビュー再開
+                        playPreview(); 
                     }, 3000);
                 }
             }, 50);
@@ -284,7 +305,7 @@ GraNotes.UI = (function() {
             setTimeout(() => {
                 loadingMsg.classList.add('hidden');
                 diffSelect.classList.remove('hidden');
-                playPreview(); // エラーで戻った場合もプレビュー再開
+                playPreview(); 
             }, 3000);
         }
     }
