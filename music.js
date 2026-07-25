@@ -17,7 +17,7 @@ GraNotes.MusicList = [
         filename: "shatter_the_rhyme",
         bpm: 150,
         previewStart: 33,
-        previewEnd: 50,
+        previewEnd: 51,
         description: "GRAVITYで作った完成しなかったゲームの中ボス『グラドール』のバックストーリーを描いた曲。悲しい過去を綴っています。"
     },
     {
@@ -25,7 +25,7 @@ GraNotes.MusicList = [
         filename: "poltergeist_of_paper",
         bpm: 150,
         previewStart: 33,
-        previewEnd: 55,
+        previewEnd: 56,
         description: "GRAVITYで作った完成しなかったゲームの中ボス戦に使えそうな曲。ポルターガイストのような不安定さを表現しています。"
     }
 ];
