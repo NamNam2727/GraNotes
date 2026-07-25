@@ -6,32 +6,87 @@ GraNotes.Game = (function() {
     let ctx = null;
     let canvas = null;
 
-    // 定数
     const JUDGE_TIME_PERFECT = 0.08;
     const JUDGE_TIME_GOOD = 0.15;
+    const JUDGE_TIME_SLIDER_START = 0.25; 
+    
     const HIT_RADIUS = 50;
-    const COLOR_PRIMARY = 'rgba(20, 184, 166, '; // Teal-500
+    const TRACKING_RADIUS = HIT_RADIUS * 1.5; 
+    const COLOR_PRIMARY = 'rgba(20, 184, 166, '; 
+
+    let activePointers = {};
+
+    function resizeCanvas() {
+        if (!canvas) return;
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+    }
+
+    function updatePointer(id, clientX, clientY) {
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        activePointers[id] = {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    function removePointer(id) {
+        delete activePointers[id];
+    }
 
     function init(canvasElement) {
         canvas = canvasElement;
         ctx = canvas.getContext('2d');
         
-        // タッチイベントの登録
-        canvas.addEventListener('mousedown', (e) => handleTap(e.clientX, e.clientY));
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        canvas.addEventListener('mousedown', (e) => {
+            updatePointer('mouse', e.clientX, e.clientY);
+            handleTap(e.clientX, e.clientY); 
+        });
+        canvas.addEventListener('mousemove', (e) => {
+            if (activePointers['mouse']) updatePointer('mouse', e.clientX, e.clientY); 
+        });
+        window.addEventListener('mouseup', () => removePointer('mouse'));
+        window.addEventListener('mouseleave', () => removePointer('mouse'));
+        
         canvas.addEventListener('touchstart', (e) => {
             e.preventDefault(); 
             for(let i=0; i<e.changedTouches.length; i++) {
-                handleTap(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+                const touch = e.changedTouches[i];
+                updatePointer(touch.identifier, touch.clientX, touch.clientY);
+                handleTap(touch.clientX, touch.clientY); 
             }
         }, {passive: false});
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault(); 
+            for(let i=0; i<e.changedTouches.length; i++) {
+                const touch = e.changedTouches[i];
+                updatePointer(touch.identifier, touch.clientX, touch.clientY); 
+            }
+        }, {passive: false});
+        canvas.addEventListener('touchend', (e) => {
+            for(let i=0; i<e.changedTouches.length; i++) {
+                removePointer(e.changedTouches[i].identifier);
+            }
+        });
+        canvas.addEventListener('touchcancel', (e) => {
+            for(let i=0; i<e.changedTouches.length; i++) {
+                removePointer(e.changedTouches[i].identifier);
+            }
+        });
     }
 
     function startGame() {
         const state = GraNotes.State;
         
-        // スコア初期化
         state.score = 0; state.combo = 0; state.maxCombo = 0; 
         state.stats = { perfect: 0, good: 0, miss: 0 };
+        activePointers = {}; 
         GraNotesUI.updateHUD();
         
         state.playSource = state.audioContext.createBufferSource(); 
@@ -43,6 +98,8 @@ GraNotes.Game = (function() {
         state.isPlaying = true;
         
         state.playSource.onended = stopGame;
+        
+        resizeCanvas();
         drawFrame();
     }
 
@@ -57,7 +114,6 @@ GraNotes.Game = (function() {
         GraNotesUI.showResult();
     }
 
-    // --- 判定ロジック ---
     function handleTap(eventX, eventY) {
         const state = GraNotes.State;
         if (!state.isPlaying) return;
@@ -71,11 +127,17 @@ GraNotes.Game = (function() {
         const currentTime = state.audioContext.currentTime - state.startTime;
 
         for (let g of state.generatedNotes) {
-            for (let node of g.nodes) {
+            for (let i = 0; i < g.nodes.length; i++) {
+                const node = g.nodes[i];
                 if (node.hit) continue; 
                 
+                if (g.nodes.length > 1 && i > 0) continue;
+                
                 const timeDiff = Math.abs(node.time - currentTime);
-                if (timeDiff > JUDGE_TIME_GOOD) continue; 
+                const isSliderStart = (g.nodes.length > 1 && i === 0);
+                const maxJudgeTime = isSliderStart ? JUDGE_TIME_SLIDER_START : JUDGE_TIME_GOOD;
+                
+                if (timeDiff > maxJudgeTime) continue; 
 
                 const cx = node.x * canvas.width;
                 const cy = node.y * canvas.height;
@@ -86,7 +148,8 @@ GraNotes.Game = (function() {
                     node.hitTime = currentTime; 
                     node.hitType = timeDiff <= JUDGE_TIME_PERFECT ? 'perfect' : 'good';
                     
-                    addScore(node.hitType === 'perfect' ? 1000 : 500, node.hitType === 'perfect');
+                    const scoreVal = node.hitType === 'perfect' ? 200 : 100;
+                    addScore(scoreVal, node.hitType === 'perfect');
                     return; 
                 }
             }
@@ -95,8 +158,10 @@ GraNotes.Game = (function() {
 
     function addScore(baseScore, isPerfect) {
         const state = GraNotes.State;
+        
         const comboMultiplier = 1.0 + (state.combo * 0.01);
         state.score += baseScore * comboMultiplier;
+        
         state.combo++;
         if (state.combo > state.maxCombo) state.maxCombo = state.combo;
         
@@ -107,6 +172,7 @@ GraNotes.Game = (function() {
             state.stats.good++; 
             GraNotesUI.showJudge("GOOD", "#86efac"); 
         }
+        
         GraNotesUI.updateHUD();
     }
 
@@ -118,7 +184,6 @@ GraNotes.Game = (function() {
         GraNotesUI.updateHUD();
     }
 
-    // --- 描画ループ (プロトタイプ版の美しい挙動を復元) ---
     function drawFrame() {
         const state = GraNotes.State;
         if (!state.isPlaying) return; 
@@ -127,7 +192,6 @@ GraNotes.Game = (function() {
         const currentTime = state.audioContext.currentTime - state.startTime; 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // --- 背景ガイドライン ---
         const isTopRow = Math.floor(currentTime / state.measureDuration) % 2 === 0;
         ctx.lineWidth = 2; ctx.strokeStyle = '#1e293b';
         ctx.beginPath(); ctx.moveTo(0, canvas.height * 0.5); ctx.lineTo(canvas.width, canvas.height * 0.5); ctx.stroke(); 
@@ -138,7 +202,8 @@ GraNotes.Game = (function() {
         ctx.setLineDash([]);
 
         const measureProgress = (currentTime % state.measureDuration) / state.measureDuration;
-        ctx.fillStyle = 'rgba(20, 184, 166, 0.08)'; 
+        
+        ctx.fillStyle = 'rgba(20, 184, 166, 0.15)'; 
         if (isTopRow) { 
             ctx.fillRect(0, canvas.height * 0.23, canvas.width * measureProgress, canvas.height * 0.24); 
         } else { 
@@ -151,29 +216,130 @@ GraNotes.Game = (function() {
         const PRE_TIME = state.measureDuration * 0.8; 
         const maxRadius = 24; 
 
-        // --- ノーツの描画 ---
         state.generatedNotes.forEach((group) => {
             const nodes = group.nodes; 
             const tFirst = nodes[0].time; 
             const tLast = nodes[nodes.length - 1].time;
             
-            // 判定エフェクトの余韻を残すため、tLast + 0.5 秒まで描画対象にする
             if (currentTime < tFirst - PRE_TIME || currentTime > tLast + 0.5) return;
             
-            // Miss判定の処理 (描画ループ内で行う)
-            nodes.forEach(node => {
-                if (!node.hit && !node.missed && currentTime > node.time + 0.15) {
-                    node.missed = true;
-                    breakCombo();
+            if (group.isSliderMissed === undefined) group.isSliderMissed = false;
+            if (group.lostTime === undefined) group.lostTime = 0;
+            
+            if (group.isOffTrackCurrent === undefined) group.isOffTrackCurrent = false; 
+            if (group.isOffTrackTotal === undefined) group.isOffTrackTotal = false;     
+            
+            const isSlider = nodes.length > 1;
+            // ★ スライダーが完全に終わっているかのフラグ
+            const isSliderCompleted = isSlider && nodes[nodes.length - 1].hit;
+
+            let targetX = nodes[0].x; let targetY = nodes[0].y; let isActive = false; 
+            if (currentTime >= tFirst && currentTime <= tLast) {
+                isActive = true;
+                for (let i = 0; i < nodes.length - 1; i++) {
+                    if (currentTime >= nodes[i].time && currentTime <= nodes[i+1].time) {
+                        let timeRange = nodes[i+1].time - nodes[i].time;
+                        let ratio = timeRange <= 0.0001 ? 1.0 : (currentTime - nodes[i].time) / timeRange;
+                        targetX = nodes[i].x + (nodes[i+1].x - nodes[i].x) * ratio; 
+                        targetY = nodes[i].y + (nodes[i+1].y - nodes[i].y) * ratio; 
+                        break;
+                    }
                 }
-            });
+            } else if (currentTime > tLast) { 
+                targetX = nodes[nodes.length - 1].x; targetY = nodes[nodes.length - 1].y; 
+            }
+            let cx = targetX * canvas.width; let cy = targetY * canvas.height;
+
+            // --- ★ なぞりの追従・コンボ判定 (判定ループのバグ修正版) ---
+            let isTrackedNow = false;
+            
+            if (isSlider && !group.isSliderMissed && !isSliderCompleted) {
+                if (nodes[0].hit && currentTime >= tFirst) {
+                    // 指の距離チェック
+                    for (const pointerId in activePointers) {
+                        const p = activePointers[pointerId];
+                        const dist = Math.sqrt(Math.pow(p.x - cx, 2) + Math.pow(p.y - cy, 2));
+                        if (dist <= TRACKING_RADIUS) { 
+                            isTrackedNow = true;
+                            break;
+                        }
+                    }
+
+                    // 猶予期間（tLast + 0.15）までは追従状態を更新する
+                    if (currentTime <= tLast + 0.15) {
+                        if (!isTrackedNow) {
+                            group.isOffTrackCurrent = true;
+                            group.isOffTrackTotal = true;
+                            
+                            if (group.lostTime === 0) group.lostTime = currentTime;
+                            if (currentTime - group.lostTime > 0.15) { 
+                                group.isSliderMissed = true;
+                                breakCombo();
+                                nodes.forEach(n => { if(!n.hit) n.missed = true; });
+                            }
+                        } else {
+                            group.lostTime = 0; 
+                        }
+                    }
+                    
+                    // コンボ判定（isActiveの外に出して確実に実行させる）
+                    if (!group.isSliderMissed) {
+                        nodes.forEach((node, index) => {
+                            if (index > 0 && !node.hit) {
+                                const isEndNode = (index === nodes.length - 1);
+                                
+                                if (!isEndNode) {
+                                    // 中間ノードは時間通過で判定
+                                    if (currentTime >= node.time) {
+                                        node.hit = true;
+                                        node.hitTime = currentTime;
+                                        let hitType = group.isOffTrackCurrent ? 'good' : 'perfect';
+                                        group.isOffTrackCurrent = false; // リセット
+                                        node.hitType = hitType;
+                                        addScore(hitType === 'perfect' ? 200 : 100, hitType === 'perfect');
+                                    }
+                                } else {
+                                    // ★ 終点ノードのリリース（指離し）判定
+                                    if (currentTime >= node.time - 0.15 && currentTime <= node.time + 0.15) {
+                                        // 指を離した瞬間に判定！
+                                        if (!isTrackedNow) {
+                                            node.hit = true;
+                                            node.hitTime = currentTime;
+                                            let hitType = group.isOffTrackTotal ? 'good' : 'perfect';
+                                            node.hitType = hitType;
+                                            addScore(hitType === 'perfect' ? 200 : 100, hitType === 'perfect');
+                                        }
+                                    }
+                                    // 時間枠を過ぎても押しっぱなしなら自動クリア（親切設計）
+                                    if (!node.hit && currentTime > node.time + 0.15) {
+                                        node.hit = true;
+                                        node.hitTime = currentTime;
+                                        let hitType = group.isOffTrackTotal ? 'good' : 'perfect';
+                                        node.hitType = hitType;
+                                        addScore(hitType === 'perfect' ? 200 : 100, hitType === 'perfect');
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+
+            // 始点の見逃し(Miss)判定
+            const maxMissTime = isSlider ? JUDGE_TIME_SLIDER_START : JUDGE_TIME_GOOD;
+            if (!nodes[0].hit && !nodes[0].missed && currentTime > nodes[0].time + maxMissTime) {
+                nodes[0].missed = true;
+                if (isSlider) group.isSliderMissed = true;
+                breakCombo();
+                nodes.forEach(n => n.missed = true);
+            }
 
             let progress = Math.min(1.0, (currentTime - (tFirst - PRE_TIME)) / PRE_TIME);
             let alpha = progress; 
             if (currentTime > tLast) alpha = 1.0 - (currentTime - tLast) / 0.3; 
 
-            // 1. スライダーの軌跡描画 (プロトタイプの完全復元)
-            if (nodes.length > 1) {
+            // 軌跡の描画
+            if (isSlider) {
                 ctx.beginPath(); ctx.moveTo(nodes[0].x * canvas.width, nodes[0].y * canvas.height);
                 for(let i=1; i<nodes.length; i++) ctx.lineTo(nodes[i].x * canvas.width, nodes[i].y * canvas.height);
                 ctx.strokeStyle = COLOR_PRIMARY + (alpha * 0.3) + ')'; ctx.lineWidth = maxRadius * 1.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
@@ -181,43 +347,57 @@ GraNotes.Game = (function() {
                 ctx.beginPath(); ctx.moveTo(nodes[0].x * canvas.width, nodes[0].y * canvas.height);
                 for(let i=1; i<nodes.length; i++) ctx.lineTo(nodes[i].x * canvas.width, nodes[i].y * canvas.height);
                 ctx.strokeStyle = COLOR_PRIMARY + (alpha * 0.8) + ')'; ctx.lineWidth = 4; ctx.stroke();
-                
-                nodes.forEach(n => { 
-                    ctx.beginPath(); ctx.arc(n.x * canvas.width, n.y * canvas.height, maxRadius * 0.3, 0, Math.PI*2); 
-                    ctx.fillStyle = COLOR_PRIMARY + (alpha * 0.6) + ')'; ctx.fill(); 
-                });
             }
-
-            // 2. 光るターゲットの現在地計算
-            let targetX = nodes[0].x; let targetY = nodes[0].y; let isActive = false; 
-            if (currentTime >= tFirst && currentTime <= tLast) {
-                isActive = true;
-                for (let i = 0; i < nodes.length - 1; i++) {
-                    if (currentTime >= nodes[i].time && currentTime <= nodes[i+1].time) {
-                        let ratio = (currentTime - nodes[i].time) / (nodes[i+1].time - nodes[i].time);
-                        targetX = nodes[i].x + (nodes[i+1].x - nodes[i].x) * ratio; targetY = nodes[i].y + (nodes[i+1].y - nodes[i].y) * ratio; break;
-                    }
-                }
-            } else if (currentTime > tLast) { 
-                targetX = nodes[nodes.length - 1].x; targetY = nodes[nodes.length - 1].y; 
-            }
-
-            let cx = targetX * canvas.width; let cy = targetY * canvas.height;
             
-            // 3. アプローチリングの描画 (スライダーも単発も最初のノーツに表示)
             if (currentTime < tFirst) {
                 let p = 1.0 - ((tFirst - currentTime) / PRE_TIME);
                 ctx.beginPath(); ctx.arc(nodes[0].x * canvas.width, nodes[0].y * canvas.height, maxRadius + (maxRadius * 2 * (1 - p)), 0, Math.PI * 2);
                 ctx.strokeStyle = COLOR_PRIMARY + '0.8)'; ctx.lineWidth = 2; ctx.stroke();
             }
 
-            // 4. ノーツ本体・光る玉の描画
-            if (isActive && nodes.length > 1) {
-                // スライダー中の光る追従玉
-                ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 1.2, 0, Math.PI * 2); ctx.fillStyle = COLOR_PRIMARY + '1.0)'; ctx.fill();
-                ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 0.6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
-            } else if (nodes.length === 1) {
-                // 単発ノーツの本体
+            // 光る玉と閃光の描画
+            if (isActive && isSlider) {
+                if (!group.isSliderMissed) {
+                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 1.2, 0, Math.PI * 2); ctx.fillStyle = COLOR_PRIMARY + '1.0)'; ctx.fill();
+                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 0.6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+                    
+                    if (nodes[0].hit && currentTime >= tFirst) {
+                        ctx.beginPath(); 
+                        ctx.arc(cx, cy, TRACKING_RADIUS, 0, Math.PI * 2);
+                        ctx.setLineDash([6, 6]);
+                        ctx.strokeStyle = isTrackedNow ? 'rgba(20, 184, 166, 0.8)' : 'rgba(239, 68, 68, 0.8)'; 
+                        ctx.lineWidth = 2; 
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
+                    if (isTrackedNow) {
+                        const pulse = 1.0 + Math.sin(currentTime * 20) * 0.3; 
+                        ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 2.0 * pulse, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(253, 224, 71, ${0.4 / pulse})`; 
+                        ctx.fill();
+
+                        ctx.save();
+                        ctx.translate(cx, cy);
+                        ctx.rotate(currentTime * 5); 
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(-maxRadius * 2.5, 0); ctx.lineTo(maxRadius * 2.5, 0);
+                        ctx.moveTo(0, -maxRadius * 2.5); ctx.lineTo(0, maxRadius * 2.5);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                        ctx.lineWidth = 3; ctx.stroke();
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(-maxRadius * 1.2, -maxRadius * 1.2); ctx.lineTo(maxRadius * 1.2, maxRadius * 1.2);
+                        ctx.moveTo(maxRadius * 1.2, -maxRadius * 1.2); ctx.lineTo(-maxRadius * 1.2, maxRadius * 1.2);
+                        ctx.lineWidth = 2; ctx.stroke();
+                        
+                        ctx.restore();
+                    }
+                } else {
+                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 1.2, 0, Math.PI * 2); ctx.fillStyle = 'rgba(100, 116, 139, 0.5)'; ctx.fill();
+                }
+            } else if (!isSlider) {
                 let n = nodes[0];
                 if (!n.hit && !n.missed) {
                     ctx.beginPath(); ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2); 
@@ -229,11 +409,14 @@ GraNotes.Game = (function() {
                 }
             }
 
-            // 5. ヒットエフェクトの描画 (単発・スライダー共通)
-            nodes.forEach(node => {
+            // ヒット波紋エフェクト
+            nodes.forEach((node, index) => {
                 if (node.hit) {
                     const elapsedSinceHit = currentTime - node.hitTime;
-                    if (elapsedSinceHit < 0.3) {
+                    const isEndNode = (index === nodes.length - 1 && nodes.length > 1);
+                    
+                    // ★ 始点と終点は大きな波紋を出す
+                    if ((index === 0 || isEndNode) && elapsedSinceHit < 0.3) {
                         const nx = node.x * canvas.width;
                         const ny = node.y * canvas.height;
                         const expand = 1.0 + (elapsedSinceHit / 0.3);
@@ -241,6 +424,18 @@ GraNotes.Game = (function() {
                         ctx.beginPath(); ctx.arc(nx, ny, maxRadius * expand, 0, Math.PI*2);
                         ctx.strokeStyle = node.hitType === 'perfect' ? `rgba(253, 224, 71, ${fade})` : `rgba(134, 239, 172, ${fade})`;
                         ctx.lineWidth = 4; ctx.stroke();
+                    } 
+                    // 中間ノードは小さな波紋
+                    else if (index > 0 && !isEndNode && elapsedSinceHit < 0.2) {
+                        const nx = node.x * canvas.width;
+                        const ny = node.y * canvas.height;
+                        const expand = 1.0 + (elapsedSinceHit / 0.2);
+                        const fade = 1.0 - (elapsedSinceHit / 0.2);
+                        ctx.beginPath(); ctx.arc(nx, ny, maxRadius * expand * 0.8, 0, Math.PI*2);
+                        
+                        const rippleColor = node.hitType === 'perfect' ? `rgba(20, 184, 166, ${fade * 0.5})` : `rgba(134, 239, 172, ${fade * 0.5})`;
+                        ctx.strokeStyle = rippleColor; 
+                        ctx.lineWidth = 2; ctx.stroke();
                     }
                 }
             });
