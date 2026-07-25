@@ -4,7 +4,7 @@ window.GraNotes = window.GraNotes || {};
 
 GraNotes.ENGINE_CONFIG = {
     freq: 800,           
-    q: 0.5,              
+    q: 0.75,              
     diffThresh: 0.03,    
     absThresh: 0.095,    
     sustainThresh: 0.03  
