@@ -27,6 +27,22 @@ GraNotes.MusicList = [
         previewStart: 33,
         previewEnd: 56,
         description: "GRAVITYで作った完成しなかったゲームの中ボス戦に使えそうな曲。ポルターガイストのような不安定さを表現しています。"
+    },
+    {
+        title: "Bone White SCYTHE",
+        filename: "bone_white_scythe",
+        bpm: 150,
+        previewStart: 33,
+        previewEnd: 55,
+        description: "GRAVITYで作った完成しなかったゲームに登場する死神さんが、死霊を召喚しながら襲いかかってくるのをイメージした曲です。"
+    },
+    {
+        title: "EXPIRATION LAW",
+        filename: "expiration_law",
+        bpm: 240,
+        previewStart: 32,
+        previewEnd: 46,
+        description: "GRAVITYで作った完成しなかったゲームに登場する死神さんが、制限時間切れで召喚されて、全力でプレイヤーを殺しにかかってくる感じの曲です。"
     }
 ];
 
