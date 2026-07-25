@@ -118,7 +118,7 @@ GraNotes.Game = (function() {
         GraNotesUI.updateHUD();
     }
 
-    // --- 描画ループ ---
+    // --- 描画ループ (プロトタイプ版の美しい挙動を復元) ---
     function drawFrame() {
         const state = GraNotes.State;
         if (!state.isPlaying) return; 
@@ -127,7 +127,7 @@ GraNotes.Game = (function() {
         const currentTime = state.audioContext.currentTime - state.startTime; 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // 背景ガイドライン
+        // --- 背景ガイドライン ---
         const isTopRow = Math.floor(currentTime / state.measureDuration) % 2 === 0;
         ctx.lineWidth = 2; ctx.strokeStyle = '#1e293b';
         ctx.beginPath(); ctx.moveTo(0, canvas.height * 0.5); ctx.lineTo(canvas.width, canvas.height * 0.5); ctx.stroke(); 
@@ -151,14 +151,16 @@ GraNotes.Game = (function() {
         const PRE_TIME = state.measureDuration * 0.8; 
         const maxRadius = 24; 
 
+        // --- ノーツの描画 ---
         state.generatedNotes.forEach((group) => {
             const nodes = group.nodes; 
             const tFirst = nodes[0].time; 
             const tLast = nodes[nodes.length - 1].time;
             
+            // 判定エフェクトの余韻を残すため、tLast + 0.5 秒まで描画対象にする
             if (currentTime < tFirst - PRE_TIME || currentTime > tLast + 0.5) return;
             
-            // Miss判定
+            // Miss判定の処理 (描画ループ内で行う)
             nodes.forEach(node => {
                 if (!node.hit && !node.missed && currentTime > node.time + 0.15) {
                     node.missed = true;
@@ -170,7 +172,7 @@ GraNotes.Game = (function() {
             let alpha = progress; 
             if (currentTime > tLast) alpha = 1.0 - (currentTime - tLast) / 0.3; 
 
-            // スライダー線描画
+            // 1. スライダーの軌跡描画 (プロトタイプの完全復元)
             if (nodes.length > 1) {
                 ctx.beginPath(); ctx.moveTo(nodes[0].x * canvas.width, nodes[0].y * canvas.height);
                 for(let i=1; i<nodes.length; i++) ctx.lineTo(nodes[i].x * canvas.width, nodes[i].y * canvas.height);
@@ -179,43 +181,14 @@ GraNotes.Game = (function() {
                 ctx.beginPath(); ctx.moveTo(nodes[0].x * canvas.width, nodes[0].y * canvas.height);
                 for(let i=1; i<nodes.length; i++) ctx.lineTo(nodes[i].x * canvas.width, nodes[i].y * canvas.height);
                 ctx.strokeStyle = COLOR_PRIMARY + (alpha * 0.8) + ')'; ctx.lineWidth = 4; ctx.stroke();
+                
+                nodes.forEach(n => { 
+                    ctx.beginPath(); ctx.arc(n.x * canvas.width, n.y * canvas.height, maxRadius * 0.3, 0, Math.PI*2); 
+                    ctx.fillStyle = COLOR_PRIMARY + (alpha * 0.6) + ')'; ctx.fill(); 
+                });
             }
 
-            // ノーツ本体描画
-            nodes.forEach(node => {
-                const cx = node.x * canvas.width;
-                const cy = node.y * canvas.height;
-                
-                if (node.hit) {
-                    const elapsed = currentTime - node.hitTime;
-                    if (elapsed < 0.3) {
-                        const expand = 1.0 + (elapsed / 0.3); 
-                        const fade = 1.0 - (elapsed / 0.3);
-                        ctx.beginPath(); ctx.arc(cx, cy, maxRadius * expand, 0, Math.PI*2);
-                        ctx.strokeStyle = node.hitType === 'perfect' ? `rgba(253, 224, 71, ${fade})` : `rgba(134, 239, 172, ${fade})`;
-                        ctx.lineWidth = 4; ctx.stroke();
-                    }
-                    return; 
-                }
-                if (node.missed) {
-                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius, 0, Math.PI*2);
-                    ctx.fillStyle = 'rgba(100, 116, 139, 0.3)'; ctx.fill();
-                    return;
-                }
-
-                const timeDiff = node.time - currentTime;
-                if (timeDiff > 0 && timeDiff <= PRE_TIME) {
-                    let p = 1.0 - (timeDiff / PRE_TIME);
-                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius + (maxRadius * 2 * (1 - p)), 0, Math.PI * 2);
-                    ctx.strokeStyle = COLOR_PRIMARY + '0.8)'; ctx.lineWidth = 2; ctx.stroke();
-                }
-
-                ctx.beginPath(); ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
-                ctx.fillStyle = COLOR_PRIMARY + (timeDiff < 0 ? alpha : (0.3 + 0.7 * progress)) + ')'; ctx.fill();
-                ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fillStyle = 'white'; ctx.fill();
-            });
-            
-            // スライダー追従の光エフェクト
+            // 2. 光るターゲットの現在地計算
             let targetX = nodes[0].x; let targetY = nodes[0].y; let isActive = false; 
             if (currentTime >= tFirst && currentTime <= tLast) {
                 isActive = true;
@@ -230,10 +203,48 @@ GraNotes.Game = (function() {
             }
 
             let cx = targetX * canvas.width; let cy = targetY * canvas.height;
+            
+            // 3. アプローチリングの描画 (スライダーも単発も最初のノーツに表示)
+            if (currentTime < tFirst) {
+                let p = 1.0 - ((tFirst - currentTime) / PRE_TIME);
+                ctx.beginPath(); ctx.arc(nodes[0].x * canvas.width, nodes[0].y * canvas.height, maxRadius + (maxRadius * 2 * (1 - p)), 0, Math.PI * 2);
+                ctx.strokeStyle = COLOR_PRIMARY + '0.8)'; ctx.lineWidth = 2; ctx.stroke();
+            }
+
+            // 4. ノーツ本体・光る玉の描画
             if (isActive && nodes.length > 1) {
+                // スライダー中の光る追従玉
                 ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 1.2, 0, Math.PI * 2); ctx.fillStyle = COLOR_PRIMARY + '1.0)'; ctx.fill();
                 ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 0.6, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fill();
+            } else if (nodes.length === 1) {
+                // 単発ノーツの本体
+                let n = nodes[0];
+                if (!n.hit && !n.missed) {
+                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2); 
+                    ctx.fillStyle = COLOR_PRIMARY + (currentTime > tFirst ? alpha : (0.3 + 0.7 * progress)) + ')'; ctx.fill();
+                    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fillStyle = 'white'; ctx.fill();
+                } else if (n.missed) {
+                    ctx.beginPath(); ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2); 
+                    ctx.fillStyle = 'rgba(100, 116, 139, 0.3)'; ctx.fill();
+                }
             }
+
+            // 5. ヒットエフェクトの描画 (単発・スライダー共通)
+            nodes.forEach(node => {
+                if (node.hit) {
+                    const elapsedSinceHit = currentTime - node.hitTime;
+                    if (elapsedSinceHit < 0.3) {
+                        const nx = node.x * canvas.width;
+                        const ny = node.y * canvas.height;
+                        const expand = 1.0 + (elapsedSinceHit / 0.3);
+                        const fade = 1.0 - (elapsedSinceHit / 0.3);
+                        ctx.beginPath(); ctx.arc(nx, ny, maxRadius * expand, 0, Math.PI*2);
+                        ctx.strokeStyle = node.hitType === 'perfect' ? `rgba(253, 224, 71, ${fade})` : `rgba(134, 239, 172, ${fade})`;
+                        ctx.lineWidth = 4; ctx.stroke();
+                    }
+                }
+            });
+
         });
     }
 
