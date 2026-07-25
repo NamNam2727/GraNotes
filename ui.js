@@ -6,18 +6,15 @@ GraNotes.UI = (function() {
     
     let selectedIndex = 0;
     
-    // プレビュー再生用のオーディオオブジェクト
     let previewAudio = new Audio();
     let isPreviewAllowed = false; 
     
-    // ★ プレビューの最大音量とフェードにかける時間（秒）
     const PREVIEW_MAX_VOLUME = 0.5;
     const FADE_DURATION = 2.0; 
 
     function build() {
         const app = document.getElementById('app');
         
-        // HTML構造の動的生成
         app.innerHTML = `
             <div id="game-container">
                 <div id="screen-area">
@@ -32,9 +29,7 @@ GraNotes.UI = (function() {
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
                             <!-- 左側: カルーセル -->
                             <div id="carousel-container" class="relative w-32 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
-                                <div id="item-prev" class="carousel-item prev"></div>
-                                <div id="item-current" class="carousel-item current"></div>
-                                <div id="item-next" class="carousel-item next"></div>
+                                <!-- ★ JSで動的にアルバムアート要素を生成します -->
                             </div>
                             <!-- 右側: 楽曲情報 -->
                             <div class="ml-6 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
@@ -48,7 +43,6 @@ GraNotes.UI = (function() {
 
                         <div id="diff-select" class="w-full flex flex-col items-center px-8 pb-10 z-10">
                             <p class="text-sm text-gray-200 mb-3 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
-                            <!-- 難易度ボタンはJavaScriptで動的生成します -->
                         </div>
                     </div>
 
@@ -56,7 +50,6 @@ GraNotes.UI = (function() {
                     <div id="hud-layer" class="hidden">
                         <div id="score-display">0000000</div>
                         
-                        <!-- 判定文字とコンボをまとめた中央エリア -->
                         <div id="center-display-area">
                             <div id="judge-display">PERFECT</div>
                             <div id="combo-display" style="display:none;">
@@ -91,6 +84,16 @@ GraNotes.UI = (function() {
         const screenTitle = document.getElementById('screen-title');
         const screenResult = document.getElementById('screen-result');
         const btnRestart = document.getElementById('btn-restart');
+        
+        // --- ★ カルーセルアイテムの動的生成 ---
+        const carouselContainer = document.getElementById('carousel-container');
+        GraNotes.MusicList.forEach((music, index) => {
+            const item = document.createElement('div');
+            item.id = `carousel-item-${index}`;
+            item.className = 'carousel-item hidden-item'; // 初期状態は隠しておく
+            item.style.backgroundImage = `url('music/${music.filename}.png')`;
+            carouselContainer.appendChild(item);
+        });
         
         const diffKeys = Object.keys(GraNotes.DIFFICULTIES);
         diffKeys.forEach(key => {
@@ -127,7 +130,6 @@ GraNotes.UI = (function() {
         window.dispatchEvent(new Event('resize'));
     }
 
-    // --- ★ プレビュー再生コントロール (フェードイン・フェードアウト対応) ---
     function playPreview() {
         if (!isPreviewAllowed) return; 
         
@@ -138,36 +140,30 @@ GraNotes.UI = (function() {
             previewAudio.src = `music/${music.filename}.mp3`;
         }
         
-        // 再生位置と音量を初期化
         previewAudio.currentTime = music.previewStart;
-        previewAudio.volume = 0; // 音量0からスタート
+        previewAudio.volume = 0; 
         
         previewAudio.play().catch(e => console.log("プレビュー再生がブロックされました:", e));
 
-        // 毎フレームの再生時間を監視して音量を調整
         previewAudio.ontimeupdate = () => {
             const current = previewAudio.currentTime;
             const start = music.previewStart;
             const end = music.previewEnd;
 
-            // ループ処理 (終了時間を超えたら最初に戻す)
             if (current >= end) {
                 previewAudio.currentTime = start;
                 previewAudio.volume = 0;
                 return;
             }
 
-            // フェードイン (開始からFADE_DURATION秒間)
             if (current >= start && current < start + FADE_DURATION) {
                 let progress = (current - start) / FADE_DURATION;
                 previewAudio.volume = Math.min(progress * PREVIEW_MAX_VOLUME, PREVIEW_MAX_VOLUME);
             } 
-            // フェードアウト (終了のFADE_DURATION秒前から)
             else if (current <= end && current > end - FADE_DURATION) {
                 let progress = (end - current) / FADE_DURATION;
                 previewAudio.volume = Math.max(progress * PREVIEW_MAX_VOLUME, 0);
             } 
-            // 通常再生（フェード中以外）
             else {
                 previewAudio.volume = PREVIEW_MAX_VOLUME;
             }
@@ -175,10 +171,10 @@ GraNotes.UI = (function() {
     }
 
     function stopPreview() {
-        // ゲーム開始時は即座にプレビューを止める
         previewAudio.pause();
     }
 
+    // --- ★ クラスの付け替えで滑らかに移動させるように変更 ---
     function updateCarousel() {
         const musicList = GraNotes.MusicList;
         if (!musicList || musicList.length === 0) return;
@@ -187,9 +183,24 @@ GraNotes.UI = (function() {
         const prevIdx = (selectedIndex - 1 + total) % total;
         const nextIdx = (selectedIndex + 1) % total;
         
-        document.getElementById('item-prev').style.backgroundImage = `url('music/${musicList[prevIdx].filename}.png')`;
-        document.getElementById('item-current').style.backgroundImage = `url('music/${musicList[selectedIndex].filename}.png')`;
-        document.getElementById('item-next').style.backgroundImage = `url('music/${musicList[nextIdx].filename}.png')`;
+        // 全アイテムのクラスを再設定
+        for (let i = 0; i < total; i++) {
+            const item = document.getElementById(`carousel-item-${i}`);
+            if (!item) continue;
+            
+            // 一旦クラスをリセットして基本状態にする
+            item.className = 'carousel-item'; 
+            
+            if (i === selectedIndex) {
+                item.classList.add('current');
+            } else if (i === prevIdx) {
+                item.classList.add('prev');
+            } else if (i === nextIdx) {
+                item.classList.add('next');
+            } else {
+                item.classList.add('hidden-item');
+            }
+        }
         
         document.getElementById('select-bg').style.backgroundImage = `url('music/${musicList[selectedIndex].filename}.png')`;
         
