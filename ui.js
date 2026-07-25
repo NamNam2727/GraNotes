@@ -17,7 +17,7 @@ GraNotes.UI = (function() {
     const PREVIEW_MAX_VOLUME = 0.5;
     const FADE_DURATION = 2.0; 
 
-    // ★ プレビュー監視用のループID
+    // プレビュー監視用のループID
     let previewAnimationFrame = null;
 
     function build() {
@@ -71,24 +71,26 @@ GraNotes.UI = (function() {
 
                     <!-- リザルト画面 -->
                     <div id="screen-result" class="ui-layer hidden" style="background: rgba(15, 23, 42, 0.95); z-index: 30;">
-                        <h2 class="text-3xl font-black text-white mb-2">RESULT</h2>
+                        <h2 class="text-3xl font-black text-white mb-2 mt-4">RESULT</h2>
                         
-                        <div class="text-center mb-6">
+                        <!-- ★ 画像と曲名・難易度表示エリア -->
+                        <div class="text-center mb-4 flex flex-col items-center">
+                            <div id="res-music-image" class="w-32 h-32 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30"></div>
                             <div id="res-music-title" class="text-xl font-bold text-teal-300 px-4 leading-tight mb-1"></div>
                             <div id="res-music-diff" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-600"></div>
                         </div>
 
-                        <div class="text-center mb-8">
+                        <div class="text-center mb-6">
                             <div class="text-gray-400 text-sm">SCORE</div>
                             <div id="result-score" class="text-5xl font-bold text-teal-400 tracking-wider">0000000</div>
                         </div>
-                        <div class="w-3/4 space-y-2 mb-8 text-lg">
+                        <div class="w-3/4 space-y-2 mb-6 text-lg">
                             <div class="flex justify-between"><span class="text-yellow-400">PERFECT</span><span id="res-perfect">0</span></div>
                             <div class="flex justify-between"><span class="text-green-400">GOOD</span><span id="res-good">0</span></div>
                             <div class="flex justify-between"><span class="text-gray-500">MISS</span><span id="res-miss">0</span></div>
                             <div class="flex justify-between border-t border-gray-600 pt-2 mt-2"><span class="text-teal-300">MAX COMBO</span><span id="res-combo">0</span></div>
                         </div>
-                        <button id="btn-restart" class="px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full font-bold text-white transition-colors border border-gray-500 shadow-lg">選曲画面へ戻る</button>
+                        <button id="btn-restart" class="px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full font-bold text-white transition-colors border border-gray-500 shadow-lg mb-4">選曲画面へ戻る</button>
                     </div>
 
                     <canvas id="game-canvas"></canvas>
@@ -155,57 +157,50 @@ GraNotes.UI = (function() {
             screenTitle.classList.remove('hidden');
             document.getElementById('diff-select').classList.remove('hidden');
             document.getElementById('loading-msg').classList.add('hidden');
-            playPreview();
+            
+            // ★ タイトル画面に戻った時に、背景やカルーセルの状態を再適用する
+            updateCarousel(); 
         });
 
         window.dispatchEvent(new Event('resize'));
     }
 
-    // --- ★ ノイズ防止と滑らかフェードのための再生処理 ---
     function playPreview() {
         if (!isPreviewAllowed) return; 
         
         const music = GraNotes.MusicList[selectedIndex];
         if (!music) return;
 
-        // ★ 前の監視ループを確実に停止
         if (previewAnimationFrame) {
             cancelAnimationFrame(previewAnimationFrame);
             previewAnimationFrame = null;
         }
 
-        // ★ ソース変更・シークの前に「必ず一時停止＆完全ミュート」を行う（ノイズ防止）
         previewAudio.pause();
         previewAudio.volume = 0; 
         if (previewGain) previewGain.gain.value = 0;
 
         if (!previewAudio.src.endsWith(`${music.filename}.mp3`)) {
             previewAudio.src = `music/${music.filename}.mp3`;
-            previewAudio.load(); // ソース変更をブラウザに強制認識させる
+            previewAudio.load(); 
         }
         
-        // ミュート状態のまま目的の再生位置へシーク
         previewAudio.currentTime = music.previewStart;
         
-        // 再生開始
         previewAudio.play().catch(e => console.log("プレビュー再生ブロック:", e));
 
-        // ★ 秒間60回の超高速ループで音量と時間を監視する
         function updateVolumeLoop() {
-            // ゲーム開始時などにポーズされていたら監視終了
             if (previewAudio.paused) return; 
 
             const current = previewAudio.currentTime;
             const start = music.previewStart;
             const end = music.previewEnd;
 
-            // ループ処理（終了時間を超えたら）
             if (current >= end) {
                 previewAudio.currentTime = start;
                 if (previewGain) previewGain.gain.value = 0;
                 else previewAudio.volume = 0;
             } else {
-                // フェード音量の計算
                 let targetVolume = PREVIEW_MAX_VOLUME;
                 if (current >= start && current < start + FADE_DURATION) {
                     let progress = (current - start) / FADE_DURATION;
@@ -216,7 +211,6 @@ GraNotes.UI = (function() {
                     targetVolume = Math.max(progress * PREVIEW_MAX_VOLUME, 0);
                 } 
                 
-                // 音量の即時適用
                 if (previewGain) {
                     previewGain.gain.value = targetVolume;
                 } else {
@@ -224,11 +218,9 @@ GraNotes.UI = (function() {
                 }
             }
 
-            // 次のフレームも監視する
             previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
         }
 
-        // 監視ループ開始
         previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
     }
 
@@ -380,7 +372,7 @@ GraNotes.UI = (function() {
                     setTimeout(() => {
                         loadingMsg.classList.add('hidden');
                         diffSelect.classList.remove('hidden');
-                        playPreview(); 
+                        updateCarousel(); 
                     }, 3000);
                 }
             }, 50);
@@ -393,7 +385,7 @@ GraNotes.UI = (function() {
             setTimeout(() => {
                 loadingMsg.classList.add('hidden');
                 diffSelect.classList.remove('hidden');
-                playPreview(); 
+                updateCarousel(); 
             }, 3000);
         }
     }
@@ -443,6 +435,8 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
+        // ★ リザルト画面に画像と曲名・難易度をセット
+        document.getElementById('res-music-image').style.backgroundImage = `url('music/${music.filename}.png')`;
         document.getElementById('res-music-title').textContent = music.title;
         document.getElementById('res-music-diff').textContent = selectedDifficultyName;
 
