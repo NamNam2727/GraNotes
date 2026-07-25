@@ -17,15 +17,17 @@ GraNotes.UI = (function() {
     const PREVIEW_MAX_VOLUME = 0.5;
     const FADE_DURATION = 2.0; 
 
+    // ★ プレビュー監視用のループID
+    let previewAnimationFrame = null;
+
     function build() {
         const app = document.getElementById('app');
         
-        // HTML構造の動的生成
         app.innerHTML = `
             <div id="game-container">
                 <div id="screen-area">
                 
-                    <!-- ★ 新設：タイトル（スプラッシュ）画面 -->
+                    <!-- タイトル（スプラッシュ）画面 -->
                     <div id="screen-splash" class="ui-layer" style="background: #020617; z-index: 50; cursor: pointer;">
                         <h1 class="text-5xl font-black text-teal-400 mb-8 tracking-widest" style="text-shadow: 0 0 20px rgba(45,212,191,0.6);">GraNotes</h1>
                         <p class="text-gray-300 text-lg animate-pulse font-bold tracking-widest">TAP TO START</p>
@@ -37,13 +39,9 @@ GraNotes.UI = (function() {
                         
                         <h1 class="text-4xl font-black text-teal-400 mt-10 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
                         
-                        <!-- カルーセルと曲情報エリア -->
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
-                            <!-- 左側: カルーセル -->
                             <div id="carousel-container" class="relative w-32 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
-                                <!-- JSで動的にアルバムアート要素を生成 -->
                             </div>
-                            <!-- 右側: 楽曲情報 -->
                             <div class="ml-6 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
                                 <h2 id="music-title" class="text-xl font-bold text-white mb-1 leading-tight"></h2>
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-3"></p>
@@ -127,13 +125,11 @@ GraNotes.UI = (function() {
         updateCarousel();
         setupCarouselEvents();
 
-        // --- ★ 新設：タイトル(スプラッシュ)画面での初期化処理 ---
         const splashScreen = document.getElementById('screen-splash');
         splashScreen.addEventListener('click', async () => {
             if (!isPreviewAllowed) {
                 const state = GraNotes.State;
                 
-                // Web Audio APIの初期化（ユーザーのタップ内で実行）
                 if (!state.audioContext) {
                     state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -141,7 +137,6 @@ GraNotes.UI = (function() {
                     await state.audioContext.resume();
                 }
 
-                // GainNodeのセットアップ
                 if (!previewSource) {
                     previewSource = state.audioContext.createMediaElementSource(previewAudio);
                     previewGain = state.audioContext.createGain();
@@ -150,11 +145,7 @@ GraNotes.UI = (function() {
                 }
                 
                 isPreviewAllowed = true;
-                
-                // スプラッシュ画面をフェードアウトして非表示にする
                 splashScreen.classList.add('hidden');
-                
-                // プレビュー再生を開始（フェードインが機能する）
                 playPreview();
             }
         });
@@ -170,52 +161,83 @@ GraNotes.UI = (function() {
         window.dispatchEvent(new Event('resize'));
     }
 
+    // --- ★ ノイズ防止と滑らかフェードのための再生処理 ---
     function playPreview() {
         if (!isPreviewAllowed) return; 
         
         const music = GraNotes.MusicList[selectedIndex];
         if (!music) return;
 
+        // ★ 前の監視ループを確実に停止
+        if (previewAnimationFrame) {
+            cancelAnimationFrame(previewAnimationFrame);
+            previewAnimationFrame = null;
+        }
+
+        // ★ ソース変更・シークの前に「必ず一時停止＆完全ミュート」を行う（ノイズ防止）
+        previewAudio.pause();
+        previewAudio.volume = 0; 
+        if (previewGain) previewGain.gain.value = 0;
+
         if (!previewAudio.src.endsWith(`${music.filename}.mp3`)) {
             previewAudio.src = `music/${music.filename}.mp3`;
+            previewAudio.load(); // ソース変更をブラウザに強制認識させる
         }
         
+        // ミュート状態のまま目的の再生位置へシーク
         previewAudio.currentTime = music.previewStart;
-        if (previewGain) previewGain.gain.value = 0; 
         
+        // 再生開始
         previewAudio.play().catch(e => console.log("プレビュー再生ブロック:", e));
 
-        previewAudio.ontimeupdate = () => {
+        // ★ 秒間60回の超高速ループで音量と時間を監視する
+        function updateVolumeLoop() {
+            // ゲーム開始時などにポーズされていたら監視終了
+            if (previewAudio.paused) return; 
+
             const current = previewAudio.currentTime;
             const start = music.previewStart;
             const end = music.previewEnd;
 
+            // ループ処理（終了時間を超えたら）
             if (current >= end) {
                 previewAudio.currentTime = start;
                 if (previewGain) previewGain.gain.value = 0;
-                return;
+                else previewAudio.volume = 0;
+            } else {
+                // フェード音量の計算
+                let targetVolume = PREVIEW_MAX_VOLUME;
+                if (current >= start && current < start + FADE_DURATION) {
+                    let progress = (current - start) / FADE_DURATION;
+                    targetVolume = Math.min(progress * PREVIEW_MAX_VOLUME, PREVIEW_MAX_VOLUME);
+                } 
+                else if (current <= end && current > end - FADE_DURATION) {
+                    let progress = (end - current) / FADE_DURATION;
+                    targetVolume = Math.max(progress * PREVIEW_MAX_VOLUME, 0);
+                } 
+                
+                // 音量の即時適用
+                if (previewGain) {
+                    previewGain.gain.value = targetVolume;
+                } else {
+                    previewAudio.volume = targetVolume; 
+                }
             }
 
-            let targetVolume = PREVIEW_MAX_VOLUME;
-            if (current >= start && current < start + FADE_DURATION) {
-                let progress = (current - start) / FADE_DURATION;
-                targetVolume = Math.min(progress * PREVIEW_MAX_VOLUME, PREVIEW_MAX_VOLUME);
-            } 
-            else if (current <= end && current > end - FADE_DURATION) {
-                let progress = (end - current) / FADE_DURATION;
-                targetVolume = Math.max(progress * PREVIEW_MAX_VOLUME, 0);
-            } 
-            
-            if (previewGain) {
-                previewGain.gain.value = targetVolume;
-            } else {
-                previewAudio.volume = targetVolume; 
-            }
-        };
+            // 次のフレームも監視する
+            previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
+        }
+
+        // 監視ループ開始
+        previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
     }
 
     function stopPreview() {
         previewAudio.pause();
+        if (previewAnimationFrame) {
+            cancelAnimationFrame(previewAnimationFrame);
+            previewAnimationFrame = null;
+        }
     }
 
     function updateCarousel() {
@@ -249,7 +271,6 @@ GraNotes.UI = (function() {
         
         GraNotes.State.selectedMusicIndex = selectedIndex;
 
-        // すでにオーディオが許可されていれば再生
         if (isPreviewAllowed) {
             playPreview();
         }
