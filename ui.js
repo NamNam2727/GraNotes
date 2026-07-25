@@ -5,7 +5,7 @@ window.GraNotes = window.GraNotes || {};
 GraNotes.UI = (function() {
     
     let selectedIndex = 0;
-    let selectedDifficultyName = ""; // ★ 選択した難易度の名前を保持
+    let selectedDifficultyName = ""; 
     
     let previewAudio = new Audio();
     previewAudio.crossOrigin = "anonymous"; 
@@ -20,12 +20,19 @@ GraNotes.UI = (function() {
     function build() {
         const app = document.getElementById('app');
         
+        // HTML構造の動的生成
         app.innerHTML = `
             <div id="game-container">
                 <div id="screen-area">
                 
-                    <!-- タイトル & ミュージックセレクト画面 -->
-                    <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3);">
+                    <!-- ★ 新設：タイトル（スプラッシュ）画面 -->
+                    <div id="screen-splash" class="ui-layer" style="background: #020617; z-index: 50; cursor: pointer;">
+                        <h1 class="text-5xl font-black text-teal-400 mb-8 tracking-widest" style="text-shadow: 0 0 20px rgba(45,212,191,0.6);">GraNotes</h1>
+                        <p class="text-gray-300 text-lg animate-pulse font-bold tracking-widest">TAP TO START</p>
+                    </div>
+
+                    <!-- ミュージックセレクト画面 -->
+                    <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
                         <h1 class="text-4xl font-black text-teal-400 mt-10 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
@@ -65,10 +72,9 @@ GraNotes.UI = (function() {
                     </div>
 
                     <!-- リザルト画面 -->
-                    <div id="screen-result" class="ui-layer hidden" style="background: rgba(15, 23, 42, 0.95);">
+                    <div id="screen-result" class="ui-layer hidden" style="background: rgba(15, 23, 42, 0.95); z-index: 30;">
                         <h2 class="text-3xl font-black text-white mb-2">RESULT</h2>
                         
-                        <!-- ★ プレイした曲と難易度を表示 -->
                         <div class="text-center mb-6">
                             <div id="res-music-title" class="text-xl font-bold text-teal-300 px-4 leading-tight mb-1"></div>
                             <div id="res-music-diff" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-600"></div>
@@ -112,7 +118,6 @@ GraNotes.UI = (function() {
             const btn = document.createElement('button');
             btn.className = `btn-diff btn-${key}`;
             btn.textContent = diff.label;
-            // ★ クリック時に難易度名も渡す
             btn.onclick = () => startGameWithDifficulty(diff.value, diff.label);
             diffSelect.appendChild(btn);
         });
@@ -122,11 +127,13 @@ GraNotes.UI = (function() {
         updateCarousel();
         setupCarouselEvents();
 
-        const enablePreview = async () => {
+        // --- ★ 新設：タイトル(スプラッシュ)画面での初期化処理 ---
+        const splashScreen = document.getElementById('screen-splash');
+        splashScreen.addEventListener('click', async () => {
             if (!isPreviewAllowed) {
-                isPreviewAllowed = true;
                 const state = GraNotes.State;
                 
+                // Web Audio APIの初期化（ユーザーのタップ内で実行）
                 if (!state.audioContext) {
                     state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -134,6 +141,7 @@ GraNotes.UI = (function() {
                     await state.audioContext.resume();
                 }
 
+                // GainNodeのセットアップ
                 if (!previewSource) {
                     previewSource = state.audioContext.createMediaElementSource(previewAudio);
                     previewGain = state.audioContext.createGain();
@@ -141,11 +149,15 @@ GraNotes.UI = (function() {
                     previewGain.connect(state.audioContext.destination);
                 }
                 
+                isPreviewAllowed = true;
+                
+                // スプラッシュ画面をフェードアウトして非表示にする
+                splashScreen.classList.add('hidden');
+                
+                // プレビュー再生を開始（フェードインが機能する）
                 playPreview();
             }
-        };
-        window.addEventListener('mousedown', enablePreview, { once: true });
-        window.addEventListener('touchstart', enablePreview, { once: true });
+        });
 
         btnRestart.addEventListener('click', () => {
             screenResult.classList.add('hidden');
@@ -237,7 +249,10 @@ GraNotes.UI = (function() {
         
         GraNotes.State.selectedMusicIndex = selectedIndex;
 
-        playPreview();
+        // すでにオーディオが許可されていれば再生
+        if (isPreviewAllowed) {
+            playPreview();
+        }
     }
 
     function setupCarouselEvents() {
@@ -296,9 +311,8 @@ GraNotes.UI = (function() {
         }, {passive: true});
     }
 
-    // ★ 難易度名を引数に追加
     async function startGameWithDifficulty(minIntervalBeat, difficultyName) {
-        selectedDifficultyName = difficultyName; // リザルト用に保存
+        selectedDifficultyName = difficultyName; 
         stopPreview();
 
         const loadingMsg = document.getElementById('loading-msg');
@@ -403,12 +417,11 @@ GraNotes.UI = (function() {
 
     function showResult() {
         const state = GraNotes.State;
-        const music = GraNotes.MusicList[selectedIndex]; // ★ プレイした曲の情報を取得
+        const music = GraNotes.MusicList[selectedIndex]; 
         
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
-        // ★ 曲名と難易度をセット
         document.getElementById('res-music-title').textContent = music.title;
         document.getElementById('res-music-diff').textContent = selectedDifficultyName;
 
