@@ -17,7 +17,7 @@ GraNotes.MusicList = [
         filename: "shatter_the_rhyme",
         bpm: 150,
         previewStart: 33,
-        previewEnd: 51,
+        previewEnd: 50,
         description: "GRAVITYで作った完成しなかったゲームの中ボス『グラドール』のバックストーリーを描いた曲。悲しい過去を綴っています。"
     },
     {
