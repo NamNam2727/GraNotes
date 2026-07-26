@@ -16,8 +16,6 @@ GraNotes.UI = (function() {
     
     const PREVIEW_MAX_VOLUME = 0.5;
     const FADE_DURATION = 2.0; 
-
-    // プレビュー監視用のループID
     let previewAnimationFrame = null;
 
     function build() {
@@ -25,6 +23,10 @@ GraNotes.UI = (function() {
         
         app.innerHTML = `
             <div id="game-container">
+            
+                <!-- ★ 上部禁止領域の視覚化 -->
+                <div id="exclusion-zone">上部禁止領域 (UI配置不可)</div>
+                
                 <div id="screen-area">
                 
                     <!-- タイトル（スプラッシュ）画面 -->
@@ -37,7 +39,7 @@ GraNotes.UI = (function() {
                     <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
-                        <h1 class="text-4xl font-black text-teal-400 mt-10 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
+                        <h1 class="text-4xl font-black text-teal-400 mt-4 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
                         
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
                             <div id="carousel-container" class="relative w-32 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
@@ -73,7 +75,6 @@ GraNotes.UI = (function() {
                     <div id="screen-result" class="ui-layer hidden" style="background: rgba(15, 23, 42, 0.95); z-index: 30;">
                         <h2 class="text-3xl font-black text-white mb-2 mt-4">RESULT</h2>
                         
-                        <!-- ★ 画像と曲名・難易度表示エリア -->
                         <div class="text-center mb-4 flex flex-col items-center">
                             <div id="res-music-image" class="w-32 h-32 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30"></div>
                             <div id="res-music-title" class="text-xl font-bold text-teal-300 px-4 leading-tight mb-1"></div>
@@ -97,6 +98,17 @@ GraNotes.UI = (function() {
                 </div>
             </div>
         `;
+
+        // --- ★ 画面サイズに応じたレイアウト調整 (禁止領域回避) ---
+        function adjustLayout() {
+            const screenHeight = window.innerHeight;
+            // 指定された計算式
+            const topExclusionHeight = screenHeight >= 812 ? 98 : 74;
+            // CSS変数を更新して、全UIレイヤーとスコア表示を一括で押し下げる
+            document.documentElement.style.setProperty('--exclusion-height', topExclusionHeight + 'px');
+        }
+        window.addEventListener('resize', adjustLayout);
+        adjustLayout(); // 初期化時に実行
 
         const diffSelect = document.getElementById('diff-select');
         const screenTitle = document.getElementById('screen-title');
@@ -131,7 +143,6 @@ GraNotes.UI = (function() {
         splashScreen.addEventListener('click', async () => {
             if (!isPreviewAllowed) {
                 const state = GraNotes.State;
-                
                 if (!state.audioContext) {
                     state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -157,12 +168,19 @@ GraNotes.UI = (function() {
             screenTitle.classList.remove('hidden');
             document.getElementById('diff-select').classList.remove('hidden');
             document.getElementById('loading-msg').classList.add('hidden');
-            
-            // ★ タイトル画面に戻った時に、背景やカルーセルの状態を再適用する
             updateCarousel(); 
         });
+    }
 
-        window.dispatchEvent(new Event('resize'));
+    // --- ★ GRAVITY親プラットフォームへのスコア送信処理 ---
+    function reportScore(finalScore) {
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'gameOver',
+                score: finalScore
+            }, '*');
+            console.log("GRAVITYプラットフォームへスコア送信: " + finalScore);
+        }
     }
 
     function playPreview() {
@@ -217,10 +235,8 @@ GraNotes.UI = (function() {
                     previewAudio.volume = targetVolume; 
                 }
             }
-
             previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
         }
-
         previewAnimationFrame = requestAnimationFrame(updateVolumeLoop);
     }
 
@@ -435,16 +451,19 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
-        // ★ リザルト画面に画像と曲名・難易度をセット
         document.getElementById('res-music-image').style.backgroundImage = `url('music/${music.filename}.png')`;
         document.getElementById('res-music-title').textContent = music.title;
         document.getElementById('res-music-diff').textContent = selectedDifficultyName;
 
-        document.getElementById('result-score').textContent = Math.floor(state.score);
+        const finalScore = Math.floor(state.score);
+        document.getElementById('result-score').textContent = finalScore;
         document.getElementById('res-perfect').textContent = state.stats.perfect;
         document.getElementById('res-good').textContent = state.stats.good;
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
+
+        // ★ リザルト表示時にGRAVITYへスコアを送信
+        reportScore(finalScore);
     }
 
     window.GraNotesUI = {
