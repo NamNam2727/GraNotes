@@ -1,14 +1,13 @@
 (function() {
-    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:';
-    const baseURL = isLocal ? './' : 'https://namnam2727.github.io/GraNotes/';
+    // ★ どんな環境から呼ばれても、必ずGitHub Pagesからファイルを取得するように絶対パス固定
+    const baseURL = 'https://namnam2727.github.io/GraNotes/';
     
-    // ★ 新規作成した music.js を最初に読み込むように追加
     const coreScripts = [
-        'music.js',     // 0. 音楽リストデータ
-        'globals.js',   // 1. 変数や設定値
-        'analyzer.js',  // 2. 音声解析と譜面生成
-        'game.js',      // 3. ゲームループと判定処理
-        'ui.js'         // 4. 画面構築とイベントリスナー
+        'music.js',     
+        'globals.js',   
+        'analyzer.js',  
+        'game.js',      
+        'ui.js'         
     ];
 
     function loadScript(src) {
