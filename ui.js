@@ -56,6 +56,9 @@ GraNotes.UI = (function() {
 
                     <!-- ゲーム中HUD -->
                     <div id="hud-layer" class="hidden">
+                        <!-- ★ 左上の強制終了（QUIT）ボタン -->
+                        <button id="btn-retire">QUIT</button>
+                        
                         <div id="score-display">0000000</div>
                         
                         <div id="center-display-area">
@@ -95,7 +98,6 @@ GraNotes.UI = (function() {
             </div>
         `;
 
-        // --- ★ 画面サイズに応じたレイアウト調整 (禁止領域回避) ---
         function adjustLayout() {
             const screenHeight = window.innerHeight;
             const topExclusionHeight = screenHeight >= 812 ? 98 : 74;
@@ -158,6 +160,13 @@ GraNotes.UI = (function() {
             }
         });
 
+        // ★ リタイアボタンのイベントリスナー
+        const btnRetire = document.getElementById('btn-retire');
+        btnRetire.addEventListener('click', () => {
+            // ゲームループを強制停止し、リザルト画面を呼ぶ
+            GraNotes.Game.stopGame();
+        });
+
         btnRestart.addEventListener('click', () => {
             screenResult.classList.add('hidden');
             screenTitle.classList.remove('hidden');
@@ -167,7 +176,6 @@ GraNotes.UI = (function() {
         });
     }
 
-    // --- ★ GRAVITY親プラットフォームへのスコア送信処理 ---
     function reportScore(finalScore) {
         if (window.parent && window.parent !== window) {
             window.parent.postMessage({

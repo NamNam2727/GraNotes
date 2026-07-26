@@ -103,6 +103,7 @@ GraNotes.Game = (function() {
         drawFrame();
     }
 
+    // ★ UIから呼び出せるように公開しました
     function stopGame() {
         const state = GraNotes.State;
         state.isPlaying = false;
@@ -230,7 +231,6 @@ GraNotes.Game = (function() {
             if (group.isOffTrackTotal === undefined) group.isOffTrackTotal = false;     
             
             const isSlider = nodes.length > 1;
-            // ★ スライダーが完全に終わっているかのフラグ
             const isSliderCompleted = isSlider && nodes[nodes.length - 1].hit;
 
             let targetX = nodes[0].x; let targetY = nodes[0].y; let isActive = false; 
@@ -250,12 +250,10 @@ GraNotes.Game = (function() {
             }
             let cx = targetX * canvas.width; let cy = targetY * canvas.height;
 
-            // --- ★ なぞりの追従・コンボ判定 (判定ループのバグ修正版) ---
             let isTrackedNow = false;
             
             if (isSlider && !group.isSliderMissed && !isSliderCompleted) {
                 if (nodes[0].hit && currentTime >= tFirst) {
-                    // 指の距離チェック
                     for (const pointerId in activePointers) {
                         const p = activePointers[pointerId];
                         const dist = Math.sqrt(Math.pow(p.x - cx, 2) + Math.pow(p.y - cy, 2));
@@ -265,7 +263,6 @@ GraNotes.Game = (function() {
                         }
                     }
 
-                    // 猶予期間（tLast + 0.15）までは追従状態を更新する
                     if (currentTime <= tLast + 0.15) {
                         if (!isTrackedNow) {
                             group.isOffTrackCurrent = true;
@@ -282,26 +279,22 @@ GraNotes.Game = (function() {
                         }
                     }
                     
-                    // コンボ判定（isActiveの外に出して確実に実行させる）
                     if (!group.isSliderMissed) {
                         nodes.forEach((node, index) => {
                             if (index > 0 && !node.hit) {
                                 const isEndNode = (index === nodes.length - 1);
                                 
                                 if (!isEndNode) {
-                                    // 中間ノードは時間通過で判定
                                     if (currentTime >= node.time) {
                                         node.hit = true;
                                         node.hitTime = currentTime;
                                         let hitType = group.isOffTrackCurrent ? 'good' : 'perfect';
-                                        group.isOffTrackCurrent = false; // リセット
+                                        group.isOffTrackCurrent = false; 
                                         node.hitType = hitType;
                                         addScore(hitType === 'perfect' ? 200 : 100, hitType === 'perfect');
                                     }
                                 } else {
-                                    // ★ 終点ノードのリリース（指離し）判定
                                     if (currentTime >= node.time - 0.15 && currentTime <= node.time + 0.15) {
-                                        // 指を離した瞬間に判定！
                                         if (!isTrackedNow) {
                                             node.hit = true;
                                             node.hitTime = currentTime;
@@ -310,7 +303,6 @@ GraNotes.Game = (function() {
                                             addScore(hitType === 'perfect' ? 200 : 100, hitType === 'perfect');
                                         }
                                     }
-                                    // 時間枠を過ぎても押しっぱなしなら自動クリア（親切設計）
                                     if (!node.hit && currentTime > node.time + 0.15) {
                                         node.hit = true;
                                         node.hitTime = currentTime;
@@ -325,7 +317,6 @@ GraNotes.Game = (function() {
                 }
             }
 
-            // 始点の見逃し(Miss)判定
             const maxMissTime = isSlider ? JUDGE_TIME_SLIDER_START : JUDGE_TIME_GOOD;
             if (!nodes[0].hit && !nodes[0].missed && currentTime > nodes[0].time + maxMissTime) {
                 nodes[0].missed = true;
@@ -338,7 +329,6 @@ GraNotes.Game = (function() {
             let alpha = progress; 
             if (currentTime > tLast) alpha = 1.0 - (currentTime - tLast) / 0.3; 
 
-            // 軌跡の描画
             if (isSlider) {
                 ctx.beginPath(); ctx.moveTo(nodes[0].x * canvas.width, nodes[0].y * canvas.height);
                 for(let i=1; i<nodes.length; i++) ctx.lineTo(nodes[i].x * canvas.width, nodes[i].y * canvas.height);
@@ -355,7 +345,6 @@ GraNotes.Game = (function() {
                 ctx.strokeStyle = COLOR_PRIMARY + '0.8)'; ctx.lineWidth = 2; ctx.stroke();
             }
 
-            // 光る玉と閃光の描画
             if (isActive && isSlider) {
                 if (!group.isSliderMissed) {
                     ctx.beginPath(); ctx.arc(cx, cy, maxRadius * 1.2, 0, Math.PI * 2); ctx.fillStyle = COLOR_PRIMARY + '1.0)'; ctx.fill();
@@ -409,13 +398,11 @@ GraNotes.Game = (function() {
                 }
             }
 
-            // ヒット波紋エフェクト
             nodes.forEach((node, index) => {
                 if (node.hit) {
                     const elapsedSinceHit = currentTime - node.hitTime;
                     const isEndNode = (index === nodes.length - 1 && nodes.length > 1);
                     
-                    // ★ 始点と終点は大きな波紋を出す
                     if ((index === 0 || isEndNode) && elapsedSinceHit < 0.3) {
                         const nx = node.x * canvas.width;
                         const ny = node.y * canvas.height;
@@ -425,7 +412,6 @@ GraNotes.Game = (function() {
                         ctx.strokeStyle = node.hitType === 'perfect' ? `rgba(253, 224, 71, ${fade})` : `rgba(134, 239, 172, ${fade})`;
                         ctx.lineWidth = 4; ctx.stroke();
                     } 
-                    // 中間ノードは小さな波紋
                     else if (index > 0 && !isEndNode && elapsedSinceHit < 0.2) {
                         const nx = node.x * canvas.width;
                         const ny = node.y * canvas.height;
@@ -443,9 +429,11 @@ GraNotes.Game = (function() {
         });
     }
 
+    // ★ 外部からstopGameを呼べるように追加
     return {
         init: init,
-        startGame: startGame
+        startGame: startGame,
+        stopGame: stopGame
     };
 })();
 
