@@ -23,10 +23,6 @@ GraNotes.UI = (function() {
         
         app.innerHTML = `
             <div id="game-container">
-            
-                <!-- ★ 上部禁止領域の視覚化 -->
-                <div id="exclusion-zone">上部禁止領域 (UI配置不可)</div>
-                
                 <div id="screen-area">
                 
                     <!-- タイトル（スプラッシュ）画面 -->
@@ -102,13 +98,11 @@ GraNotes.UI = (function() {
         // --- ★ 画面サイズに応じたレイアウト調整 (禁止領域回避) ---
         function adjustLayout() {
             const screenHeight = window.innerHeight;
-            // 指定された計算式
             const topExclusionHeight = screenHeight >= 812 ? 98 : 74;
-            // CSS変数を更新して、全UIレイヤーとスコア表示を一括で押し下げる
             document.documentElement.style.setProperty('--exclusion-height', topExclusionHeight + 'px');
         }
         window.addEventListener('resize', adjustLayout);
-        adjustLayout(); // 初期化時に実行
+        adjustLayout(); 
 
         const diffSelect = document.getElementById('diff-select');
         const screenTitle = document.getElementById('screen-title');
@@ -143,6 +137,7 @@ GraNotes.UI = (function() {
         splashScreen.addEventListener('click', async () => {
             if (!isPreviewAllowed) {
                 const state = GraNotes.State;
+                
                 if (!state.audioContext) {
                     state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 }
@@ -462,7 +457,6 @@ GraNotes.UI = (function() {
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
 
-        // ★ リザルト表示時にGRAVITYへスコアを送信
         reportScore(finalScore);
     }
 
