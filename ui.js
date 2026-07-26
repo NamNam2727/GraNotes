@@ -4,7 +4,6 @@ window.GraNotes = window.GraNotes || {};
 
 GraNotes.UI = (function() {
     
-    // ★ アセット読み込み用の絶対パス定数を定義
     const ASSET_URL = 'https://namnam2727.github.io/GraNotes/';
 
     let selectedIndex = 0;
@@ -118,7 +117,6 @@ GraNotes.UI = (function() {
             const item = document.createElement('div');
             item.id = `carousel-item-${index}`;
             item.className = 'carousel-item hidden-item'; 
-            // ★ 画像パスを絶対パス化
             item.style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
             carouselContainer.appendChild(item);
         });
@@ -163,6 +161,7 @@ GraNotes.UI = (function() {
             }
         });
 
+        // QUITボタン（リタイア時はフラグを渡さず、常にスコアを送信する）
         const btnRetire = document.getElementById('btn-retire');
         btnRetire.addEventListener('click', () => {
             GraNotes.Game.stopGame();
@@ -202,7 +201,6 @@ GraNotes.UI = (function() {
         previewAudio.volume = 0; 
         if (previewGain) previewGain.gain.value = 0;
 
-        // ★ 音声パスを絶対パス化
         if (!previewAudio.src.endsWith(`${music.filename}.mp3`)) {
             previewAudio.src = `${ASSET_URL}music/${music.filename}.mp3`;
             previewAudio.load(); 
@@ -277,7 +275,6 @@ GraNotes.UI = (function() {
             }
         }
         
-        // ★ 背景画像のパスを絶対パス化
         document.getElementById('select-bg').style.backgroundImage = `url('${ASSET_URL}music/${musicList[selectedIndex].filename}.png')`;
         document.getElementById('music-title').textContent = musicList[selectedIndex].title;
         document.getElementById('music-bpm').textContent = `BPM: ${musicList[selectedIndex].bpm}`;
@@ -370,7 +367,6 @@ GraNotes.UI = (function() {
                 await state.audioContext.resume();
             }
 
-            // ★ 譜面生成用データの取得パスを絶対パス化
             const response = await fetch(`${ASSET_URL}music/${music.filename}.mp3`);
             if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
             const arrayBuffer = await response.arrayBuffer();
@@ -451,6 +447,7 @@ GraNotes.UI = (function() {
         elCenterArea.classList.add('judge-pop');
     }
 
+    // ★ リザルト表示時は、曲が最後まで終わった場合でもQUIT（途中終了）した場合でも常にスコアを送信する
     function showResult() {
         const state = GraNotes.State;
         const music = GraNotes.MusicList[selectedIndex]; 
@@ -458,7 +455,6 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
-        // ★ リザルト画像のパスを絶対パス化
         document.getElementById('res-music-image').style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
         document.getElementById('res-music-title').textContent = music.title;
         document.getElementById('res-music-diff').textContent = selectedDifficultyName;
@@ -470,7 +466,10 @@ GraNotes.UI = (function() {
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
 
-        reportScore(finalScore);
+        // リザルト画面が表示されてから0.5秒後に確実にスコアを送信
+        setTimeout(() => {
+            reportScore(finalScore);
+        }, 500);
     }
 
     window.GraNotesUI = {
@@ -482,5 +481,4 @@ GraNotes.UI = (function() {
 
     return window.GraNotesUI;
 })();
-
 

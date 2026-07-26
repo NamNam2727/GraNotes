@@ -6,9 +6,9 @@ GraNotes.Game = (function() {
     let ctx = null;
     let canvas = null;
 
-    const JUDGE_TIME_PERFECT = 0.08;
-    const JUDGE_TIME_GOOD = 0.15;
-    const JUDGE_TIME_SLIDER_START = 0.25; 
+    const JUDGE_TIME_PERFECT = 0.10;
+    const JUDGE_TIME_GOOD = 0.20;
+    const JUDGE_TIME_SLIDER_START = 0.30; 
     
     const HIT_RADIUS = 50;
     const TRACKING_RADIUS = HIT_RADIUS * 1.5; 
@@ -97,22 +97,31 @@ GraNotes.Game = (function() {
         state.startTime = state.audioContext.currentTime; 
         state.isPlaying = true;
         
-        state.playSource.onended = stopGame;
+        // 音楽が最後まで終わった場合は通常のクリア (isRetire = false)
+        state.playSource.onended = () => stopGame(false);
         
         resizeCanvas();
         drawFrame();
     }
 
-    // ★ UIから呼び出せるように公開しました
-    function stopGame() {
+    // ★ 引数に「リタイア(QUIT)かどうか」を追加
+    function stopGame(isRetire = false) {
         const state = GraNotes.State;
+        if (!state.isPlaying) return; // すでに終了処理中なら無視
+
         state.isPlaying = false;
+        
+        // onendedイベントが二重に発火するのを防ぐ
         if (state.playSource) { 
+            state.playSource.onended = null; 
             state.playSource.disconnect(); 
+            state.playSource.stop(); // 音楽を強制停止
             state.playSource = null; 
         }
         cancelAnimationFrame(state.animationId);
-        GraNotesUI.showResult();
+        
+        // リザルト画面へフラグを渡す
+        GraNotesUI.showResult(isRetire);
     }
 
     function handleTap(eventX, eventY) {
@@ -429,7 +438,6 @@ GraNotes.Game = (function() {
         });
     }
 
-    // ★ 外部からstopGameを呼べるように追加
     return {
         init: init,
         startGame: startGame,
