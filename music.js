@@ -13,6 +13,14 @@ GraNotes.MusicList = [
         description: "GRAVITYで作っていたAIゲームの最序盤に登場するモンスター『グライム』のテーマソング。このゲームは結局完成しなかった…。"
     },
     {
+        title: "最強のグライム",
+        filename: "waking_dream",
+        bpm: 135,
+        previewStart: 24, // プレビュー開始（秒）
+        previewEnd: 38,   // プレビュー終了（秒）
+        description: "実はゲームが完成していて、実は自分ががラスボスで、実は勇者をやっつけて。そんな『グライム』の夢が詰まった物語です。全部、夢だったんだ…。"
+    },
+    {
         title: "SHATTER THE RHYME",
         filename: "shatter_the_rhyme",
         bpm: 150,
