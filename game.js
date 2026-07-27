@@ -6,13 +6,31 @@ GraNotes.Game = (function() {
     let ctx = null;
     let canvas = null;
 
-    const JUDGE_TIME_PERFECT = 0.10;
-    const JUDGE_TIME_GOOD = 0.20;
-    const JUDGE_TIME_SLIDER_START = 0.30; 
+    // ==========================================
+    // ★ タイミング・判定のカスタマイズ設定
+    // ==========================================
+
+    // ノーツの出現タイミングの微調整（秒単位）
+    // 音楽に対してノーツが「早い(早く来すぎる)」場合はプラスの値を、
+    // 音楽に対してノーツが「遅い(遅れて来る)」場合はマイナスの値を設定します。
+    const NOTE_OFFSET = 0.10; // (例: 0.10秒 ノーツを遅らせる)
+
+    // タップの判定時間（秒単位）。大きくするほどタイミング判定が甘くなります。
+    const JUDGE_TIME_PERFECT = 0.10; // PERFECTになるズレの許容時間
+    const JUDGE_TIME_GOOD = 0.20;    // GOODになるズレの許容時間
+    const JUDGE_TIME_SLIDER_START = 0.30; // なぞりの最初のタップはさらに甘く
     
-    const HIT_RADIUS = 50;
+    // 当たり判定の大きさ（ピクセル単位）。大きくするほど位置判定が甘くなります。
+    // 単発ノーツやなぞり始点タップ時の当たり判定の半径です。
+    const HIT_RADIUS = 60;
+    
+    // なぞり中の許容範囲の大きさ（ピクセル単位）。
+    // なぞっている最中の「点線の円」の大きさになります。
     const TRACKING_RADIUS = HIT_RADIUS * 1.5; 
+
+    // 光る玉のメインカラー
     const COLOR_PRIMARY = 'rgba(20, 184, 166, '; 
+    // ==========================================
 
     let activePointers = {};
 
@@ -97,30 +115,26 @@ GraNotes.Game = (function() {
         state.startTime = state.audioContext.currentTime; 
         state.isPlaying = true;
         
-        // 音楽が最後まで終わった場合は通常のクリア (isRetire = false)
         state.playSource.onended = () => stopGame(false);
         
         resizeCanvas();
         drawFrame();
     }
 
-    // ★ 引数に「リタイア(QUIT)かどうか」を追加
     function stopGame(isRetire = false) {
         const state = GraNotes.State;
-        if (!state.isPlaying) return; // すでに終了処理中なら無視
+        if (!state.isPlaying) return; 
 
         state.isPlaying = false;
         
-        // onendedイベントが二重に発火するのを防ぐ
         if (state.playSource) { 
             state.playSource.onended = null; 
             state.playSource.disconnect(); 
-            state.playSource.stop(); // 音楽を強制停止
+            state.playSource.stop(); 
             state.playSource = null; 
         }
         cancelAnimationFrame(state.animationId);
         
-        // リザルト画面へフラグを渡す
         GraNotesUI.showResult(isRetire);
     }
 
@@ -134,7 +148,9 @@ GraNotes.Game = (function() {
         const tapX = (eventX - rect.left) * scaleX;
         const tapY = (eventY - rect.top) * scaleY;
 
-        const currentTime = state.audioContext.currentTime - state.startTime;
+        // ★ 音声の再生時間からオフセットを引いて、ノーツの表示と判定をズラす
+        const baseTime = state.audioContext.currentTime - state.startTime;
+        const currentTime = baseTime - NOTE_OFFSET;
 
         for (let g of state.generatedNotes) {
             for (let i = 0; i < g.nodes.length; i++) {
@@ -199,7 +215,11 @@ GraNotes.Game = (function() {
         if (!state.isPlaying) return; 
         
         state.animationId = requestAnimationFrame(drawFrame);
-        const currentTime = state.audioContext.currentTime - state.startTime; 
+        
+        // ★ 音声の再生時間からオフセットを引いて、ノーツの表示と判定をズラす
+        const baseTime = state.audioContext.currentTime - state.startTime; 
+        const currentTime = baseTime - NOTE_OFFSET;
+        
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         const isTopRow = Math.floor(currentTime / state.measureDuration) % 2 === 0;
