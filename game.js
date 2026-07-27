@@ -17,8 +17,8 @@ GraNotes.Game = (function() {
 
     // タップの判定時間（秒単位）。大きくするほどタイミング判定が甘くなります。
     const JUDGE_TIME_PERFECT = 0.10; // PERFECTになるズレの許容時間
-    const JUDGE_TIME_GOOD = 0.20;    // GOODになるズレの許容時間
-    const JUDGE_TIME_SLIDER_START = 0.30; // なぞりの最初のタップはさらに甘く
+    const JUDGE_TIME_GOOD = 0.30;    // GOODになるズレの許容時間
+    const JUDGE_TIME_SLIDER_START = 0.50; // なぞりの最初のタップはさらに甘く
     
     // 当たり判定の大きさ（ピクセル単位）。大きくするほど位置判定が甘くなります。
     // 単発ノーツやなぞり始点タップ時の当たり判定の半径です。
