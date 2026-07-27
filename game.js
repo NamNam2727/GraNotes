@@ -6,26 +6,14 @@ GraNotes.Game = (function() {
     let ctx = null;
     let canvas = null;
 
-    // ==========================================
-    // ★ タイミング・判定のカスタマイズ設定
-    // ==========================================
-
-    // ※ノーツの出現タイミングの微調整 (NOTE_OFFSET) は、
-    // ui.jsのスライダーで設定・保存される GraNotes.Settings.noteOffset から動的に取得します。
-
-    // タップの判定時間（秒単位）。大きくするほどタイミング判定が甘くなります。
-    const JUDGE_TIME_PERFECT = 0.10; // PERFECTになるズレの許容時間
-    const JUDGE_TIME_GOOD = 0.30;    // GOODになるズレの許容時間
-    const JUDGE_TIME_SLIDER_START = 0.45; // なぞりの最初のタップはさらに甘く
+    const JUDGE_TIME_PERFECT = 0.10; 
+    const JUDGE_TIME_GOOD = 0.30;    
+    const JUDGE_TIME_SLIDER_START = 0.45; 
     
-    // 当たり判定の大きさ（ピクセル単位）。大きくするほど位置判定が甘くなります。
     const HIT_RADIUS = 60;
-    
-    // なぞり中の許容範囲の大きさ（ピクセル単位）。
     const TRACKING_RADIUS = HIT_RADIUS * 1.5; 
 
     const COLOR_PRIMARY = 'rgba(20, 184, 166, '; 
-    // ==========================================
 
     let activePointers = {};
 
@@ -143,7 +131,6 @@ GraNotes.Game = (function() {
         const tapX = (eventX - rect.left) * scaleX;
         const tapY = (eventY - rect.top) * scaleY;
 
-        // ★ 音声の再生時間からUIで設定したオフセットを引く
         const baseTime = state.audioContext.currentTime - state.startTime;
         const offset = GraNotes.Settings ? GraNotes.Settings.noteOffset : 0.10;
         const currentTime = baseTime - offset;
@@ -212,7 +199,6 @@ GraNotes.Game = (function() {
         
         state.animationId = requestAnimationFrame(drawFrame);
         
-        // ★ 音声の再生時間からUIで設定したオフセットを引く
         const baseTime = state.audioContext.currentTime - state.startTime; 
         const offset = GraNotes.Settings ? GraNotes.Settings.noteOffset : 0.10;
         const currentTime = baseTime - offset;
@@ -240,7 +226,8 @@ GraNotes.Game = (function() {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'; ctx.font = '24px sans-serif';
         ctx.fillText('→', 20, canvas.height * 0.35 + 8); ctx.fillText('←', canvas.width - 40, canvas.height * 0.65 + 8); 
 
-        const PRE_TIME = state.measureDuration * 0.8; 
+        // ★ PRE_TIME を長くして、ノーツが画面に見えてから到着するまでの時間を増やし、速度をゆっくりにする
+        const PRE_TIME = state.measureDuration * 1.5; 
         const maxRadius = 24; 
 
         state.generatedNotes.forEach((group) => {

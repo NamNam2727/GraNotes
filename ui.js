@@ -24,7 +24,13 @@ GraNotes.UI = (function() {
     let smoothedAudioTime = 0;
 
     function build() {
-        // ★ iPhoneでのダブルタップによるズームを強制ブロック
+        // ★ iPhoneのマルチタッチや意図しないズーム操作をJavaScriptからも強力にブロック
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault(); 
+            }
+        }, { passive: false });
+
         let lastTouchEnd = 0;
         document.addEventListener('touchend', function (event) {
             const now = (new Date()).getTime();
@@ -50,13 +56,14 @@ GraNotes.UI = (function() {
                     <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
-                        <h1 class="text-4xl font-black text-teal-400 mt-2 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
+                        <!-- ★ フォントサイズや余白を小さくして全体的にコンパクト化 -->
+                        <h1 class="text-3xl font-black text-teal-400 mt-2 mb-1 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
                         
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
-                            <div id="carousel-container" class="relative w-32 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
+                            <div id="carousel-container" class="relative w-28 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
                             </div>
-                            <div class="ml-6 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
-                                <h2 id="music-title" class="text-xl font-bold text-white mb-1 leading-tight"></h2>
+                            <div class="ml-5 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
+                                <h2 id="music-title" class="text-lg font-bold text-white mb-1 leading-tight"></h2>
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
                             </div>
@@ -64,24 +71,25 @@ GraNotes.UI = (function() {
 
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
-                        <!-- ★ UIコンパクト化・1行化・枠の透明化 -->
-                        <div id="diff-select" class="w-full flex flex-col items-center px-8 pb-8 z-10">
+                        <!-- ★ スライダーを背景枠なしの1行にまとめ、「難易度を選択～」の文字を削除 -->
+                        <div id="diff-select" class="w-full flex flex-col items-center px-6 pb-6 z-10">
                             
-                            <div id="offset-settings" class="w-full mb-4 relative z-20">
-                                <div class="flex justify-between items-end mb-2 px-1">
-                                    <div class="flex items-baseline space-x-3">
-                                        <span class="text-sm text-gray-200 font-bold tracking-wider" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">タイミング調整(遅延)</span>
-                                        <span id="offset-val-display" class="text-teal-400 font-bold text-lg font-mono leading-none" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">0.10s</span>
+                            <div id="offset-settings" class="w-full mb-3 relative z-20">
+                                <div class="flex items-center justify-between mb-2 px-1">
+                                    <div class="flex items-baseline space-x-2">
+                                        <span class="text-sm text-gray-200 font-bold tracking-wider" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">タイミング調整(遅延):</span>
+                                        <span id="offset-val-display" class="text-teal-400 font-bold text-base font-mono leading-none" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">0.10s</span>
                                     </div>
-                                    <div class="relative w-10 h-10 bg-black bg-opacity-40 rounded-lg border border-gray-700 flex justify-center items-center overflow-hidden">
-                                        <canvas id="offset-preview-canvas" width="40" height="40" class="absolute top-0 left-0"></canvas>
+                                    <!-- タイミング合わせ用キャンバス -->
+                                    <div class="relative w-8 h-8 rounded-full border border-gray-500 overflow-hidden bg-black bg-opacity-50">
+                                        <canvas id="offset-preview-canvas" width="32" height="32" class="absolute top-0 left-0"></canvas>
                                     </div>
                                 </div>
-                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-3 bg-gray-600 rounded-full appearance-none cursor-pointer accent-teal-400 shadow-inner border border-gray-800">
+                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-500 rounded-full appearance-none cursor-pointer accent-teal-400 border border-gray-800">
                             </div>
 
                             <div id="diff-buttons" class="w-full flex flex-col space-y-2">
-                                <!-- 難易度ボタンを生成 -->
+                                <!-- JSでボタンを生成 -->
                             </div>
                         </div>
                     </div>
@@ -104,7 +112,7 @@ GraNotes.UI = (function() {
                         <h2 class="text-3xl font-black text-white mb-2 mt-4">RESULT</h2>
                         
                         <div class="text-center mb-4 flex flex-col items-center">
-                            <div id="res-music-image" class="w-32 h-32 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30"></div>
+                            <div id="res-music-image" class="w-28 h-28 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30"></div>
                             <div id="res-music-title" class="text-xl font-bold text-teal-300 px-4 leading-tight mb-1"></div>
                             <div id="res-music-diff" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-600"></div>
                         </div>
@@ -135,7 +143,7 @@ GraNotes.UI = (function() {
         window.addEventListener('resize', adjustLayout);
         adjustLayout(); 
 
-        const diffSelect = document.getElementById('diff-buttons'); // ★ 生成先を変更
+        const diffSelect = document.getElementById('diff-buttons'); 
         const screenTitle = document.getElementById('screen-title');
         const screenResult = document.getElementById('screen-result');
         const btnRestart = document.getElementById('btn-restart');
@@ -219,7 +227,7 @@ GraNotes.UI = (function() {
         drawOffsetPreview();
     }
 
-    // --- ★ プレビューキャンバスの描画 (4拍に1回・完全同期版) ---
+    // --- ★ プレビューキャンバスの描画 (4拍に1回 ＆ 完全同期版) ---
     function drawOffsetPreview() {
         requestAnimationFrame(drawOffsetPreview);
         
@@ -235,10 +243,14 @@ GraNotes.UI = (function() {
         if (!music || !music.bpm) return;
         
         const offset = GraNotes.Settings.noteOffset;
+        
+        // 音楽のBPMから絶対的な拍の長さを計算
         const beatDuration = 60 / music.bpm;
-        // ★ 4拍（1小節）に1回だけ実行するためのインターバル
+        
+        // 4拍（1小節）に1回光らせるためのインターバル
         const testInterval = beatDuration * 4; 
         
+        // カクつき防止のための時間補間
         const sysTime = performance.now();
         const dt = (sysTime - lastSysTime) / 1000.0;
         lastSysTime = sysTime;
@@ -249,19 +261,21 @@ GraNotes.UI = (function() {
             smoothedAudioTime += dt;
         }
         
-        // ★ previewStart の瞬間を「拍の頭（0秒）」として基準にする
-        const relativeTime = smoothedAudioTime - music.previewStart;
-        const gameTime = relativeTime - offset;
+        // ★ previewStartを一切無視し、曲の0.0秒を絶対的な基準（グリッド）として計算
+        const audioTime = smoothedAudioTime;
+        const gameTime = audioTime - offset;
         
+        // 次に光るべきターゲット時間を計算
         const currentBeat = Math.floor(gameTime / testInterval);
         const targetBeatTime = (currentBeat + 1) * testInterval;
         const timeToTarget = targetBeatTime - gameTime;
         
         const cx = width / 2;
         const cy = height / 2;
-        const maxRadius = 10;
-        // 縮むアニメーションにかける時間は1拍分のみにする
-        const PRE_TIME = beatDuration; 
+        const maxRadius = 8;
+        
+        // ゆっくり縮むアニメーション（1.5拍かけて縮む）
+        const PRE_TIME = beatDuration * 1.5; 
         
         if (timeToTarget <= PRE_TIME && timeToTarget >= 0) {
             ctx.beginPath();
@@ -282,6 +296,7 @@ GraNotes.UI = (function() {
             ctx.stroke();
         }
         
+        // ピカッと光るエフェクト（叩いた瞬間）
         const timeSinceLastBeat = gameTime - currentBeat * testInterval;
         if (timeSinceLastBeat >= 0 && timeSinceLastBeat < 0.2) {
             ctx.beginPath();
@@ -330,7 +345,7 @@ GraNotes.UI = (function() {
         }
         
         previewAudio.currentTime = music.previewStart;
-        smoothedAudioTime = music.previewStart; // ★ 初期化
+        smoothedAudioTime = music.previewStart; 
         
         previewAudio.play().catch(e => console.log("プレビュー再生ブロック:", e));
 
@@ -343,7 +358,7 @@ GraNotes.UI = (function() {
 
             if (current >= end) {
                 previewAudio.currentTime = start;
-                smoothedAudioTime = start; // ★ 初期化
+                smoothedAudioTime = start; 
                 if (previewGain) previewGain.gain.value = 0;
                 else previewAudio.volume = 0;
             } else {
