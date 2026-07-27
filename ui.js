@@ -20,57 +20,69 @@ GraNotes.UI = (function() {
     const FADE_DURATION = 2.0; 
     let previewAnimationFrame = null;
 
-    // ★ プレビューアニメーション用の変数
     let lastSysTime = 0;
     let smoothedAudioTime = 0;
 
     function build() {
+        // ★ iPhoneでのダブルタップによるズームを強制ブロック
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
         const app = document.getElementById('app');
         
         app.innerHTML = `
             <div id="game-container">
                 <div id="screen-area">
                 
+                    <!-- タイトル（スプラッシュ）画面 -->
                     <div id="screen-splash" class="ui-layer" style="background: #020617; z-index: 50; cursor: pointer;">
                         <h1 class="text-5xl font-black text-teal-400 mb-8 tracking-widest" style="text-shadow: 0 0 20px rgba(45,212,191,0.6);">GraNotes</h1>
                         <p class="text-gray-300 text-lg animate-pulse font-bold tracking-widest">TAP TO START</p>
                     </div>
 
+                    <!-- ミュージックセレクト画面 -->
                     <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
-                        <h1 class="text-4xl font-black text-teal-400 mt-4 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
+                        <h1 class="text-4xl font-black text-teal-400 mt-2 mb-2 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
                         
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
                             <div id="carousel-container" class="relative w-32 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
                             </div>
                             <div class="ml-6 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
                                 <h2 id="music-title" class="text-xl font-bold text-white mb-1 leading-tight"></h2>
-                                <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-3"></p>
+                                <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
                             </div>
                         </div>
 
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
-                        <div id="diff-select" class="w-full flex flex-col items-center px-8 pb-10 z-10">
+                        <!-- ★ UIコンパクト化・1行化・枠の透明化 -->
+                        <div id="diff-select" class="w-full flex flex-col items-center px-8 pb-8 z-10">
                             
-                            <!-- ★ ノーツタイミング（オフセット）調整スライダーとプレビュー -->
-                            <div id="offset-settings" class="w-full mb-6 p-4 bg-gray-800 bg-opacity-70 rounded-xl border border-gray-600 shadow-lg relative z-20">
-                                <div class="flex justify-between items-center mb-3">
-                                    <div class="flex flex-col">
-                                        <span class="text-xs text-gray-300 font-bold tracking-wider">タイミング調整 (遅延)</span>
-                                        <span id="offset-val-display" class="text-teal-400 font-bold text-lg font-mono">0.10s</span>
+                            <div id="offset-settings" class="w-full mb-4 relative z-20">
+                                <div class="flex justify-between items-end mb-2 px-1">
+                                    <div class="flex items-baseline space-x-3">
+                                        <span class="text-sm text-gray-200 font-bold tracking-wider" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">タイミング調整(遅延)</span>
+                                        <span id="offset-val-display" class="text-teal-400 font-bold text-lg font-mono leading-none" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">0.10s</span>
                                     </div>
-                                    <!-- タイミング合わせ用キャンバス -->
-                                    <div class="relative w-12 h-12 bg-black bg-opacity-50 rounded-lg border border-gray-700 flex justify-center items-center overflow-hidden">
-                                        <canvas id="offset-preview-canvas" width="48" height="48" class="absolute top-0 left-0"></canvas>
+                                    <div class="relative w-10 h-10 bg-black bg-opacity-40 rounded-lg border border-gray-700 flex justify-center items-center overflow-hidden">
+                                        <canvas id="offset-preview-canvas" width="40" height="40" class="absolute top-0 left-0"></canvas>
                                     </div>
                                 </div>
-                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-3 bg-gray-600 rounded-full appearance-none cursor-pointer accent-teal-400 shadow-inner border border-gray-800">
                             </div>
 
-                            <p class="text-sm text-gray-200 mb-3 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
+                            <div id="diff-buttons" class="w-full flex flex-col space-y-2">
+                                <!-- 難易度ボタンを生成 -->
+                            </div>
                         </div>
                     </div>
 
@@ -123,12 +135,11 @@ GraNotes.UI = (function() {
         window.addEventListener('resize', adjustLayout);
         adjustLayout(); 
 
-        const diffSelect = document.getElementById('diff-select');
+        const diffSelect = document.getElementById('diff-buttons'); // ★ 生成先を変更
         const screenTitle = document.getElementById('screen-title');
         const screenResult = document.getElementById('screen-result');
         const btnRestart = document.getElementById('btn-restart');
         
-        // ★ スライダーイベントとローカルストレージ保存
         const slider = document.getElementById('offset-slider');
         const display = document.getElementById('offset-val-display');
 
@@ -199,17 +210,16 @@ GraNotes.UI = (function() {
         btnRestart.addEventListener('click', () => {
             screenResult.classList.add('hidden');
             screenTitle.classList.remove('hidden');
-            document.getElementById('diff-select').classList.remove('hidden');
+            document.getElementById('offset-settings').parentElement.classList.remove('hidden');
             document.getElementById('loading-msg').classList.add('hidden');
             updateCarousel(); 
         });
 
-        // ★ プレビュー用キャンバスのアニメーションループを開始
         lastSysTime = performance.now();
         drawOffsetPreview();
     }
 
-    // --- ★ タイミング調整用：プレビューキャンバスの描画処理 ---
+    // --- ★ プレビューキャンバスの描画 (4拍に1回・完全同期版) ---
     function drawOffsetPreview() {
         requestAnimationFrame(drawOffsetPreview);
         
@@ -224,11 +234,11 @@ GraNotes.UI = (function() {
         const music = GraNotes.MusicList[selectedIndex];
         if (!music || !music.bpm) return;
         
-        // スライダーで設定したオフセットと、曲のBPM（1拍の時間）を取得
         const offset = GraNotes.Settings.noteOffset;
         const beatDuration = 60 / music.bpm;
+        // ★ 4拍（1小節）に1回だけ実行するためのインターバル
+        const testInterval = beatDuration * 4; 
         
-        // カクつきを防ぐため、システムタイマーでオーディオ時間を滑らかに補間
         const sysTime = performance.now();
         const dt = (sysTime - lastSysTime) / 1000.0;
         lastSysTime = sysTime;
@@ -239,23 +249,21 @@ GraNotes.UI = (function() {
             smoothedAudioTime += dt;
         }
         
-        // ゲーム中と同じ計算式で「オフセットを引いた時間」を算出
-        const audioTime = smoothedAudioTime;
-        const gameTime = audioTime - offset;
+        // ★ previewStart の瞬間を「拍の頭（0秒）」として基準にする
+        const relativeTime = smoothedAudioTime - music.previewStart;
+        const gameTime = relativeTime - offset;
         
-        // 現在の拍と、次に玉がヒットするべき時間
-        const currentBeat = Math.floor(gameTime / beatDuration);
-        const targetBeatTime = (currentBeat + 1) * beatDuration;
+        const currentBeat = Math.floor(gameTime / testInterval);
+        const targetBeatTime = (currentBeat + 1) * testInterval;
         const timeToTarget = targetBeatTime - gameTime;
         
         const cx = width / 2;
         const cy = height / 2;
-        const maxRadius = 12;
+        const maxRadius = 10;
+        // 縮むアニメーションにかける時間は1拍分のみにする
         const PRE_TIME = beatDuration; 
         
-        // 1. ノーツが近づいて縮んでいく表現
-        if (timeToTarget <= PRE_TIME) {
-            // 内側の光る玉
+        if (timeToTarget <= PRE_TIME && timeToTarget >= 0) {
             ctx.beginPath();
             ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(20, 184, 166, 0.4)';
@@ -265,7 +273,6 @@ GraNotes.UI = (function() {
             ctx.fillStyle = 'white';
             ctx.fill();
             
-            // 外側の縮む円
             const progress = 1.0 - (timeToTarget / PRE_TIME);
             const expandRadius = maxRadius + (maxRadius * 1.5 * (1 - progress));
             ctx.beginPath();
@@ -275,14 +282,18 @@ GraNotes.UI = (function() {
             ctx.stroke();
         }
         
-        // 2. ジャストタイミングでヒットした瞬間のエフェクト
-        const timeSinceLastBeat = gameTime - currentBeat * beatDuration;
-        if (timeSinceLastBeat < 0.2) {
+        const timeSinceLastBeat = gameTime - currentBeat * testInterval;
+        if (timeSinceLastBeat >= 0 && timeSinceLastBeat < 0.2) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(20, 184, 166, 0.8)';
+            ctx.fill();
+
             const expand = 1.0 + (timeSinceLastBeat / 0.2);
             const fade = 1.0 - (timeSinceLastBeat / 0.2);
             ctx.beginPath();
             ctx.arc(cx, cy, maxRadius * expand, 0, Math.PI * 2);
-            ctx.strokeStyle = `rgba(253, 224, 71, ${fade})`; // PERFECTの黄色
+            ctx.strokeStyle = `rgba(253, 224, 71, ${fade})`; 
             ctx.lineWidth = 3;
             ctx.stroke();
         }
@@ -319,6 +330,7 @@ GraNotes.UI = (function() {
         }
         
         previewAudio.currentTime = music.previewStart;
+        smoothedAudioTime = music.previewStart; // ★ 初期化
         
         previewAudio.play().catch(e => console.log("プレビュー再生ブロック:", e));
 
@@ -331,6 +343,7 @@ GraNotes.UI = (function() {
 
             if (current >= end) {
                 previewAudio.currentTime = start;
+                smoothedAudioTime = start; // ★ 初期化
                 if (previewGain) previewGain.gain.value = 0;
                 else previewAudio.volume = 0;
             } else {
@@ -460,7 +473,7 @@ GraNotes.UI = (function() {
         stopPreview();
 
         const loadingMsg = document.getElementById('loading-msg');
-        const diffSelect = document.getElementById('diff-select');
+        const diffSelect = document.getElementById('diff-select').parentElement;
         
         diffSelect.classList.add('hidden');
         loadingMsg.classList.remove('hidden');
