@@ -24,7 +24,6 @@ GraNotes.UI = (function() {
     let smoothedAudioTime = 0;
 
     function build() {
-        // ★ iPhoneのマルチタッチや意図しないズーム操作をJavaScriptからも強力にブロック
         document.addEventListener('touchstart', function(event) {
             if (event.touches.length > 1) {
                 event.preventDefault(); 
@@ -56,7 +55,6 @@ GraNotes.UI = (function() {
                     <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
-                        <!-- ★ フォントサイズや余白を小さくして全体的にコンパクト化 -->
                         <h1 class="text-3xl font-black text-teal-400 mt-2 mb-1 text-center tracking-wider z-10" style="text-shadow: 0 4px 10px rgba(0,0,0,0.9);">GraNotes</h1>
                         
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
@@ -71,22 +69,26 @@ GraNotes.UI = (function() {
 
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
-                        <!-- ★ スライダーを背景枠なしの1行にまとめ、「難易度を選択～」の文字を削除 -->
                         <div id="diff-select" class="w-full flex flex-col items-center px-6 pb-6 z-10">
                             
+                            <!-- ★ スライダーを上に押し上げ、タップ調整用のUIに改修 -->
                             <div id="offset-settings" class="w-full mb-3 relative z-20">
                                 <div class="flex items-center justify-between mb-2 px-1">
                                     <div class="flex items-baseline space-x-2">
                                         <span class="text-sm text-gray-200 font-bold tracking-wider" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">タイミング調整(遅延):</span>
                                         <span id="offset-val-display" class="text-teal-400 font-bold text-base font-mono leading-none" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">0.10s</span>
                                     </div>
-                                    <!-- タイミング合わせ用キャンバス -->
-                                    <div class="relative w-8 h-8 rounded-full border border-gray-500 overflow-hidden bg-black bg-opacity-50">
-                                        <canvas id="offset-preview-canvas" width="32" height="32" class="absolute top-0 left-0"></canvas>
+                                    <!-- ★ タップで自動調整できるプレビューキャンバス -->
+                                    <div id="calibration-btn" class="relative w-10 h-10 rounded-full border-2 border-gray-500 overflow-hidden bg-black bg-opacity-60 cursor-pointer flex justify-center items-center transition-transform shadow-[0_0_8px_rgba(20,184,166,0.3)]">
+                                        <canvas id="offset-preview-canvas" width="40" height="40" class="absolute top-0 left-0"></canvas>
+                                        <span class="absolute text-[10px] font-black text-white opacity-60 pointer-events-none" style="text-shadow: 0 0 2px black;">TAP</span>
                                     </div>
                                 </div>
                                 <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-500 rounded-full appearance-none cursor-pointer accent-teal-400 border border-gray-800">
                             </div>
+
+                            <!-- ★ 文字の再挿入 -->
+                            <p class="text-sm text-gray-200 mb-2 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
 
                             <div id="diff-buttons" class="w-full flex flex-col space-y-2">
                                 <!-- JSでボタンを生成 -->
@@ -161,6 +163,48 @@ GraNotes.UI = (function() {
             localStorage.setItem('GraNotes_NoteOffset', val.toString());
         });
 
+        // --- ★ 音に合わせてタップした際の自動キャリブレーション処理 ---
+        const calibBtn = document.getElementById('calibration-btn');
+        function handleCalibrationTap(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isPreviewAllowed || previewAudio.paused) return;
+            const music = GraNotes.MusicList[selectedIndex];
+            if (!music || !music.bpm) return;
+            
+            const beatDuration = 60 / music.bpm;
+            const testInterval = beatDuration * 4; // 4拍ごとの基準
+            
+            // ユーザーが「音を聴いて叩いた」瞬間のオーディオ再生時間
+            const tapTime = smoothedAudioTime;
+            
+            // 本来ノーツが降ってくるべき最も近い基準タイム（拍の頭）を計算
+            const targetBeatTime = Math.round(tapTime / testInterval) * testInterval;
+            
+            // ズレ（遅延）を計算
+            let newOffset = tapTime - targetBeatTime;
+            
+            // 指定範囲 (0.00s 〜 0.30s) に収める
+            newOffset = Math.max(0, Math.min(0.30, newOffset));
+            
+            // 設定を更新して保存
+            GraNotes.Settings.noteOffset = newOffset;
+            slider.value = newOffset.toFixed(2);
+            display.textContent = newOffset.toFixed(2) + 's';
+            localStorage.setItem('GraNotes_NoteOffset', newOffset.toString());
+            
+            // タップが成功したことの視覚的フィードバック（ボタンが縮んで黄色く光る）
+            calibBtn.style.transform = 'scale(0.8)';
+            calibBtn.style.borderColor = '#fde047';
+            setTimeout(() => { 
+                calibBtn.style.transform = 'scale(1)'; 
+                calibBtn.style.borderColor = '#6b7280';
+            }, 150);
+        }
+        calibBtn.addEventListener('mousedown', handleCalibrationTap);
+        calibBtn.addEventListener('touchstart', handleCalibrationTap, {passive: false});
+
+
         const carouselContainer = document.getElementById('carousel-container');
         GraNotes.MusicList.forEach((music, index) => {
             const item = document.createElement('div');
@@ -227,7 +271,6 @@ GraNotes.UI = (function() {
         drawOffsetPreview();
     }
 
-    // --- ★ プレビューキャンバスの描画 (4拍に1回 ＆ 完全同期版) ---
     function drawOffsetPreview() {
         requestAnimationFrame(drawOffsetPreview);
         
@@ -243,14 +286,9 @@ GraNotes.UI = (function() {
         if (!music || !music.bpm) return;
         
         const offset = GraNotes.Settings.noteOffset;
-        
-        // 音楽のBPMから絶対的な拍の長さを計算
         const beatDuration = 60 / music.bpm;
-        
-        // 4拍（1小節）に1回光らせるためのインターバル
         const testInterval = beatDuration * 4; 
         
-        // カクつき防止のための時間補間
         const sysTime = performance.now();
         const dt = (sysTime - lastSysTime) / 1000.0;
         lastSysTime = sysTime;
@@ -261,20 +299,16 @@ GraNotes.UI = (function() {
             smoothedAudioTime += dt;
         }
         
-        // ★ previewStartを一切無視し、曲の0.0秒を絶対的な基準（グリッド）として計算
         const audioTime = smoothedAudioTime;
         const gameTime = audioTime - offset;
         
-        // 次に光るべきターゲット時間を計算
         const currentBeat = Math.floor(gameTime / testInterval);
         const targetBeatTime = (currentBeat + 1) * testInterval;
         const timeToTarget = targetBeatTime - gameTime;
         
         const cx = width / 2;
         const cy = height / 2;
-        const maxRadius = 8;
-        
-        // ゆっくり縮むアニメーション（1.5拍かけて縮む）
+        const maxRadius = 10;
         const PRE_TIME = beatDuration * 1.5; 
         
         if (timeToTarget <= PRE_TIME && timeToTarget >= 0) {
@@ -296,7 +330,6 @@ GraNotes.UI = (function() {
             ctx.stroke();
         }
         
-        // ピカッと光るエフェクト（叩いた瞬間）
         const timeSinceLastBeat = gameTime - currentBeat * testInterval;
         if (timeSinceLastBeat >= 0 && timeSinceLastBeat < 0.2) {
             ctx.beginPath();
