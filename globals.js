@@ -17,6 +17,11 @@ GraNotes.DIFFICULTIES = {
     extreme: { label: "げきむず",   value: 0.125 }
 };
 
+// ★ UIで設定された保存データを管理（タイミング調整用）
+GraNotes.Settings = {
+    noteOffset: parseFloat(localStorage.getItem('GraNotes_NoteOffset') || '0.10')
+};
+
 GraNotes.State = {
     audioContext: null,
     audioBuffer: null,
@@ -35,7 +40,6 @@ GraNotes.State = {
     maxCombo: 0,
     stats: { perfect: 0, good: 0, miss: 0 },
 
-    // ★ 現在選択されている曲のインデックスを保持
     selectedMusicIndex: 0 
 };
 

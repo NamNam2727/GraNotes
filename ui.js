@@ -20,6 +20,10 @@ GraNotes.UI = (function() {
     const FADE_DURATION = 2.0; 
     let previewAnimationFrame = null;
 
+    // ★ プレビューアニメーション用の変数
+    let lastSysTime = 0;
+    let smoothedAudioTime = 0;
+
     function build() {
         const app = document.getElementById('app');
         
@@ -27,13 +31,11 @@ GraNotes.UI = (function() {
             <div id="game-container">
                 <div id="screen-area">
                 
-                    <!-- タイトル（スプラッシュ）画面 -->
                     <div id="screen-splash" class="ui-layer" style="background: #020617; z-index: 50; cursor: pointer;">
                         <h1 class="text-5xl font-black text-teal-400 mb-8 tracking-widest" style="text-shadow: 0 0 20px rgba(45,212,191,0.6);">GraNotes</h1>
                         <p class="text-gray-300 text-lg animate-pulse font-bold tracking-widest">TAP TO START</p>
                     </div>
 
-                    <!-- ミュージックセレクト画面 -->
                     <div id="screen-title" class="ui-layer" style="background: rgba(0,0,0,0.3); z-index: 20;">
                         <div id="select-bg"></div>
                         
@@ -52,6 +54,22 @@ GraNotes.UI = (function() {
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
                         <div id="diff-select" class="w-full flex flex-col items-center px-8 pb-10 z-10">
+                            
+                            <!-- ★ ノーツタイミング（オフセット）調整スライダーとプレビュー -->
+                            <div id="offset-settings" class="w-full mb-6 p-4 bg-gray-800 bg-opacity-70 rounded-xl border border-gray-600 shadow-lg relative z-20">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div class="flex flex-col">
+                                        <span class="text-xs text-gray-300 font-bold tracking-wider">タイミング調整 (遅延)</span>
+                                        <span id="offset-val-display" class="text-teal-400 font-bold text-lg font-mono">0.10s</span>
+                                    </div>
+                                    <!-- タイミング合わせ用キャンバス -->
+                                    <div class="relative w-12 h-12 bg-black bg-opacity-50 rounded-lg border border-gray-700 flex justify-center items-center overflow-hidden">
+                                        <canvas id="offset-preview-canvas" width="48" height="48" class="absolute top-0 left-0"></canvas>
+                                    </div>
+                                </div>
+                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-teal-500">
+                            </div>
+
                             <p class="text-sm text-gray-200 mb-3 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
                         </div>
                     </div>
@@ -59,9 +77,7 @@ GraNotes.UI = (function() {
                     <!-- ゲーム中HUD -->
                     <div id="hud-layer" class="hidden">
                         <button id="btn-retire">QUIT</button>
-                        
                         <div id="score-display">0000000</div>
-                        
                         <div id="center-display-area">
                             <div id="judge-display">PERFECT</div>
                             <div id="combo-display" style="display:none;">
@@ -112,6 +128,20 @@ GraNotes.UI = (function() {
         const screenResult = document.getElementById('screen-result');
         const btnRestart = document.getElementById('btn-restart');
         
+        // ★ スライダーイベントとローカルストレージ保存
+        const slider = document.getElementById('offset-slider');
+        const display = document.getElementById('offset-val-display');
+
+        slider.value = GraNotes.Settings.noteOffset;
+        display.textContent = GraNotes.Settings.noteOffset.toFixed(2) + 's';
+
+        slider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            GraNotes.Settings.noteOffset = val;
+            display.textContent = val.toFixed(2) + 's';
+            localStorage.setItem('GraNotes_NoteOffset', val.toString());
+        });
+
         const carouselContainer = document.getElementById('carousel-container');
         GraNotes.MusicList.forEach((music, index) => {
             const item = document.createElement('div');
@@ -161,10 +191,9 @@ GraNotes.UI = (function() {
             }
         });
 
-        // QUITボタン（リタイア時はフラグを渡さず、常にスコアを送信する）
         const btnRetire = document.getElementById('btn-retire');
         btnRetire.addEventListener('click', () => {
-            GraNotes.Game.stopGame();
+            GraNotes.Game.stopGame(true);
         });
 
         btnRestart.addEventListener('click', () => {
@@ -174,6 +203,89 @@ GraNotes.UI = (function() {
             document.getElementById('loading-msg').classList.add('hidden');
             updateCarousel(); 
         });
+
+        // ★ プレビュー用キャンバスのアニメーションループを開始
+        lastSysTime = performance.now();
+        drawOffsetPreview();
+    }
+
+    // --- ★ タイミング調整用：プレビューキャンバスの描画処理 ---
+    function drawOffsetPreview() {
+        requestAnimationFrame(drawOffsetPreview);
+        
+        const canvas = document.getElementById('offset-preview-canvas');
+        if (!canvas || !isPreviewAllowed || previewAudio.paused) return;
+        
+        const ctx = canvas.getContext('2d');
+        const width = canvas.width;
+        const height = canvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        const music = GraNotes.MusicList[selectedIndex];
+        if (!music || !music.bpm) return;
+        
+        // スライダーで設定したオフセットと、曲のBPM（1拍の時間）を取得
+        const offset = GraNotes.Settings.noteOffset;
+        const beatDuration = 60 / music.bpm;
+        
+        // カクつきを防ぐため、システムタイマーでオーディオ時間を滑らかに補間
+        const sysTime = performance.now();
+        const dt = (sysTime - lastSysTime) / 1000.0;
+        lastSysTime = sysTime;
+
+        if (Math.abs(previewAudio.currentTime - smoothedAudioTime) > 0.1) {
+            smoothedAudioTime = previewAudio.currentTime;
+        } else {
+            smoothedAudioTime += dt;
+        }
+        
+        // ゲーム中と同じ計算式で「オフセットを引いた時間」を算出
+        const audioTime = smoothedAudioTime;
+        const gameTime = audioTime - offset;
+        
+        // 現在の拍と、次に玉がヒットするべき時間
+        const currentBeat = Math.floor(gameTime / beatDuration);
+        const targetBeatTime = (currentBeat + 1) * beatDuration;
+        const timeToTarget = targetBeatTime - gameTime;
+        
+        const cx = width / 2;
+        const cy = height / 2;
+        const maxRadius = 12;
+        const PRE_TIME = beatDuration; 
+        
+        // 1. ノーツが近づいて縮んでいく表現
+        if (timeToTarget <= PRE_TIME) {
+            // 内側の光る玉
+            ctx.beginPath();
+            ctx.arc(cx, cy, maxRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(20, 184, 166, 0.4)';
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            
+            // 外側の縮む円
+            const progress = 1.0 - (timeToTarget / PRE_TIME);
+            const expandRadius = maxRadius + (maxRadius * 1.5 * (1 - progress));
+            ctx.beginPath();
+            ctx.arc(cx, cy, expandRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(20, 184, 166, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // 2. ジャストタイミングでヒットした瞬間のエフェクト
+        const timeSinceLastBeat = gameTime - currentBeat * beatDuration;
+        if (timeSinceLastBeat < 0.2) {
+            const expand = 1.0 + (timeSinceLastBeat / 0.2);
+            const fade = 1.0 - (timeSinceLastBeat / 0.2);
+            ctx.beginPath();
+            ctx.arc(cx, cy, maxRadius * expand, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(253, 224, 71, ${fade})`; // PERFECTの黄色
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
     }
 
     function reportScore(finalScore) {
@@ -447,7 +559,6 @@ GraNotes.UI = (function() {
         elCenterArea.classList.add('judge-pop');
     }
 
-    // ★ リザルト表示時は、曲が最後まで終わった場合でもQUIT（途中終了）した場合でも常にスコアを送信する
     function showResult() {
         const state = GraNotes.State;
         const music = GraNotes.MusicList[selectedIndex]; 
@@ -466,7 +577,6 @@ GraNotes.UI = (function() {
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
 
-        // リザルト画面が表示されてから0.5秒後に確実にスコアを送信
         setTimeout(() => {
             reportScore(finalScore);
         }, 500);
@@ -481,4 +591,5 @@ GraNotes.UI = (function() {
 
     return window.GraNotesUI;
 })();
+
 

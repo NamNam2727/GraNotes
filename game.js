@@ -10,25 +10,20 @@ GraNotes.Game = (function() {
     // ★ タイミング・判定のカスタマイズ設定
     // ==========================================
 
-    // ノーツの出現タイミングの微調整（秒単位）
-    // 音楽に対してノーツが「早い(早く来すぎる)」場合はプラスの値を、
-    // 音楽に対してノーツが「遅い(遅れて来る)」場合はマイナスの値を設定します。
-    const NOTE_OFFSET = 0.05; // (例: 0.10秒 ノーツを遅らせる)
+    // ※ノーツの出現タイミングの微調整 (NOTE_OFFSET) は、
+    // ui.jsのスライダーで設定・保存される GraNotes.Settings.noteOffset から動的に取得します。
 
     // タップの判定時間（秒単位）。大きくするほどタイミング判定が甘くなります。
     const JUDGE_TIME_PERFECT = 0.10; // PERFECTになるズレの許容時間
     const JUDGE_TIME_GOOD = 0.30;    // GOODになるズレの許容時間
-    const JUDGE_TIME_SLIDER_START = 0.50; // なぞりの最初のタップはさらに甘く
+    const JUDGE_TIME_SLIDER_START = 0.45; // なぞりの最初のタップはさらに甘く
     
     // 当たり判定の大きさ（ピクセル単位）。大きくするほど位置判定が甘くなります。
-    // 単発ノーツやなぞり始点タップ時の当たり判定の半径です。
     const HIT_RADIUS = 60;
     
     // なぞり中の許容範囲の大きさ（ピクセル単位）。
-    // なぞっている最中の「点線の円」の大きさになります。
     const TRACKING_RADIUS = HIT_RADIUS * 1.5; 
 
-    // 光る玉のメインカラー
     const COLOR_PRIMARY = 'rgba(20, 184, 166, '; 
     // ==========================================
 
@@ -148,9 +143,10 @@ GraNotes.Game = (function() {
         const tapX = (eventX - rect.left) * scaleX;
         const tapY = (eventY - rect.top) * scaleY;
 
-        // ★ 音声の再生時間からオフセットを引いて、ノーツの表示と判定をズラす
+        // ★ 音声の再生時間からUIで設定したオフセットを引く
         const baseTime = state.audioContext.currentTime - state.startTime;
-        const currentTime = baseTime - NOTE_OFFSET;
+        const offset = GraNotes.Settings ? GraNotes.Settings.noteOffset : 0.10;
+        const currentTime = baseTime - offset;
 
         for (let g of state.generatedNotes) {
             for (let i = 0; i < g.nodes.length; i++) {
@@ -216,9 +212,10 @@ GraNotes.Game = (function() {
         
         state.animationId = requestAnimationFrame(drawFrame);
         
-        // ★ 音声の再生時間からオフセットを引いて、ノーツの表示と判定をズラす
+        // ★ 音声の再生時間からUIで設定したオフセットを引く
         const baseTime = state.audioContext.currentTime - state.startTime; 
-        const currentTime = baseTime - NOTE_OFFSET;
+        const offset = GraNotes.Settings ? GraNotes.Settings.noteOffset : 0.10;
+        const currentTime = baseTime - offset;
         
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
