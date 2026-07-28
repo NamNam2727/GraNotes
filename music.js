@@ -5,6 +5,14 @@ window.GraNotes = window.GraNotes || {};
 // musicフォルダ内のデータ定義
 GraNotes.MusicList = [
     {
+        title: "おやすみ　私の惑星",
+        filename: "oyasumi",
+        bpm: 80,
+        previewStart: 38, // プレビュー開始（秒）
+        previewEnd: 70,   // プレビュー終了（秒）
+        description: "GRAVITYをテーマに作ってもらった、優しい気持ちになれる音楽です。"
+    },
+    {
         title: "HPはたったの5",
         filename: "hp_5",
         bpm: 120,
