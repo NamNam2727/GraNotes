@@ -60,7 +60,11 @@ GraNotes.Analyzer = (function() {
         } else {
             // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
             const novelty = [];
-            let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
+            
+            // 30ms前の音量と比較するための履歴配列 (3フレーム = 30ms)
+            let lHist = [0, 0, 0];
+            let mHist = [0, 0, 0];
+            let hHist = [0, 0, 0];
             let noveltySum = 0;
             
             for (let i = 0; i < lowData.length; i += hopSize) {
@@ -74,22 +78,25 @@ GraNotes.Analyzer = (function() {
                 m = Math.sqrt(m/hopSize); 
                 h = Math.sqrt(h/hopSize);
                 
+                const pL = lHist[0];
+                const pM = mHist[0];
+                const pH = hHist[0];
+                
                 // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
-                const dL = Math.max(0, l - tempPrevLow);
-                const dM = Math.max(0, m - tempPrevMid);
-                const dH = Math.max(0, h - tempPrevHigh);
+                const dL = Math.max(0, l - pL);
+                const dM = Math.max(0, m - pM);
+                const dH = Math.max(0, h - pH);
                 
                 const flux = dL + dM + dH;
                 novelty.push(flux);
                 noveltySum += flux;
                 
-                tempPrevLow = l; 
-                tempPrevMid = m; 
-                tempPrevHigh = h;
+                lHist.shift(); lHist.push(l);
+                mHist.shift(); mHist.push(m);
+                hHist.shift(); hHist.push(h);
             }
             
             // 直流(DC)成分を取り除くため、平均を引く (Mean Subtraction)
-            // これにより自己相関のベースラインが安定し、周期性が明確になります。
             const noveltyMean = noveltySum / novelty.length;
             for (let i = 0; i < novelty.length; i++) {
                 novelty[i] -= noveltyMean;
@@ -117,7 +124,6 @@ GraNotes.Analyzer = (function() {
                     count++;
                 }
                 
-                // サンプル数で正規化し、短いラグ（早いBPM）へのバイアスを防ぐ
                 if (count > 0) acf /= count;
                 
                 if (acf > maxAcf) {
@@ -126,10 +132,9 @@ GraNotes.Analyzer = (function() {
                 }
             }
             
-            // ★ 自己相関で求めたBPMを整数化
             let calculatedBpm = Math.round(bestBpm);
             
-            // ★ BPMが90以下の場合は、2倍にして倍のテンポとして扱う（遅すぎる譜面を防ぐため）
+            // ★ BPMが90以下の場合は、2倍にして倍のテンポとして扱う
             if (calculatedBpm <= 90) {
                 console.log(`[GraNotes] Detected BPM (${calculatedBpm}) is too slow. Doubling the BPM.`);
                 calculatedBpm *= 2;
@@ -138,9 +143,9 @@ GraNotes.Analyzer = (function() {
             // ★ 一般化されたスナップ処理：±2BPM以内なら10刻みにスナップ
             const remainder = calculatedBpm % 10;
             if (remainder <= 2) {
-                calculatedBpm -= remainder; // 例: 152 -> 150, 151 -> 150
+                calculatedBpm -= remainder; // 例: 152 -> 150
             } else if (remainder >= 8) {
-                calculatedBpm += (10 - remainder); // 例: 148 -> 150, 149 -> 150
+                calculatedBpm += (10 - remainder); // 例: 148 -> 150
             }
 
             state.bpm = calculatedBpm;
@@ -156,7 +161,12 @@ GraNotes.Analyzer = (function() {
 
         // --- 2. 楽曲構造の詳細リズムパターン解析 ---
         const chunks = []; let currentChunkIndex = -1;
-        let prevLow = 0, prevMid = 0, prevHigh = 0;
+        
+        // ★ 30ms前の音量と比較するための履歴配列 (3フレーム = 30ms)
+        // これにより、10msの高解像度スキャンでも、以前と同じタイミングでノーツを検知できます
+        let lHistory = [0, 0, 0];
+        let mHistory = [0, 0, 0];
+        let hHistory = [0, 0, 0];
         
         const prng = new GraNotes.XorShift(12345);
         const midRmsHistory = [];
@@ -180,10 +190,23 @@ GraNotes.Analyzer = (function() {
             l = Math.sqrt(l/hopSize); m = Math.sqrt(m/hopSize); h = Math.sqrt(h/hopSize);
             midRmsHistory.push({ time: currentTime, rms: m });
 
-            const lDiff = l - prevLow; const mDiff = m - prevMid; const hDiff = h - prevHigh;
+            // 1フレーム前ではなく、3フレーム前(30ms前)の音量を取得して比較
+            const pastLow = lHistory[0];
+            const pastMid = mHistory[0];
+            const pastHigh = hHistory[0];
+
+            const lDiff = l - pastLow; 
+            const mDiff = m - pastMid; 
+            const hDiff = h - pastHigh;
+
             const isLowHit = lDiff > 0.05 && l > 0.06; 
             const isMidHit = mDiff > config.diffThresh && m > config.absThresh; 
             const isHighHit = hDiff > 0.03 && h > 0.04;
+            
+            // 履歴配列を更新
+            lHistory.shift(); lHistory.push(l);
+            mHistory.shift(); mHistory.push(m);
+            hHistory.shift(); hHistory.push(h);
             
             const chunk = chunks[chunkIdx];
             const beatIndex = Math.floor((currentTime % CHUNK_DURATION) / beatDuration);
@@ -197,7 +220,6 @@ GraNotes.Analyzer = (function() {
                 let pitchValue = getPitch(midData, i, hopSize, sampleRate);
                 chunk.notes.push({ time: currentTime, pitch: pitchValue, seedVal: prng.next() });
             }
-            prevLow = l; prevMid = m; prevHigh = h;
         }
 
         for (let i = 1; i < chunks.length; i++) {
@@ -318,5 +340,3 @@ GraNotes.Analyzer = (function() {
         generateMap: generateMap
     };
 })();
-
-
