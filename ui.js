@@ -23,7 +23,6 @@ GraNotes.UI = (function() {
     let lastSysTime = 0;
     let smoothedAudioTime = 0;
 
-    // ★ カスタム楽曲用の変数
     let currentCustomAudioUrl = localStorage.getItem('GraNotes_CustomUrl') || '';
     let currentCustomFileName = '';
 
@@ -81,17 +80,17 @@ GraNotes.UI = (function() {
                                 
                                 <!-- ★ カスタム楽曲入力フォーム -->
                                 <div id="custom-input-area" class="hidden flex-col w-full mt-1 space-y-2">
-                                    <input type="text" id="custom-url" placeholder="MP3のURL (外部サイトはCORS許可必須)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-full shadow-inner">
+                                    <input type="text" id="custom-url" placeholder="MP3のURL (外部はCORS許可必須)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-full shadow-inner pointer-events-auto">
                                     
                                     <div class="flex items-center space-x-2">
-                                        <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow">端末から選択</button>
+                                        <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow pointer-events-auto">端末から選択</button>
                                         <input type="file" id="custom-file-input" accept="audio/*" class="hidden">
-                                        <span id="custom-file-name" class="text-[11px] text-gray-400 truncate flex-1">未選択</span>
+                                        <span id="custom-file-name" class="text-[11px] text-gray-400 truncate flex-1 pointer-events-auto">未選択</span>
                                     </div>
 
                                     <div class="flex items-center space-x-2">
-                                        <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner">
-                                        <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow">プレビュー</button>
+                                        <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner pointer-events-auto">
+                                        <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto">プレビュー</button>
                                     </div>
                                 </div>
                             </div>
@@ -100,7 +99,6 @@ GraNotes.UI = (function() {
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
                         <div id="diff-select" class="w-full flex flex-col items-center px-6 pb-6 z-10">
-                            
                             <div id="offset-settings" class="w-full mb-3 relative z-20">
                                 <div class="flex items-center justify-between mb-2 px-1">
                                     <div class="flex items-baseline space-x-2">
@@ -112,12 +110,12 @@ GraNotes.UI = (function() {
                                         <span class="absolute text-[10px] font-black text-white opacity-60 pointer-events-none" style="text-shadow: 0 0 2px black;">TAP</span>
                                     </div>
                                 </div>
-                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-500 rounded-full appearance-none cursor-pointer accent-teal-400 border border-gray-800">
+                                <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-500 rounded-full appearance-none cursor-pointer accent-teal-400 border border-gray-800 pointer-events-auto">
                             </div>
 
                             <p class="text-sm text-gray-200 mb-2 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
 
-                            <div id="diff-buttons" class="w-full flex flex-col space-y-2">
+                            <div id="diff-buttons" class="w-full flex flex-col space-y-2 pointer-events-auto">
                             </div>
                         </div>
                     </div>
@@ -155,7 +153,7 @@ GraNotes.UI = (function() {
                             <div class="flex justify-between"><span class="text-gray-500">MISS</span><span id="res-miss">0</span></div>
                             <div class="flex justify-between border-t border-gray-600 pt-2 mt-2"><span class="text-teal-300">MAX COMBO</span><span id="res-combo">0</span></div>
                         </div>
-                        <button id="btn-restart" class="px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full font-bold text-white transition-colors border border-gray-500 shadow-lg mb-4">選曲画面へ戻る</button>
+                        <button id="btn-restart" class="px-8 py-3 bg-gray-800 hover:bg-gray-700 rounded-full font-bold text-white transition-colors border border-gray-500 shadow-lg mb-4 pointer-events-auto">選曲画面へ戻る</button>
                     </div>
 
                     <canvas id="game-canvas"></canvas>
@@ -171,7 +169,6 @@ GraNotes.UI = (function() {
         window.addEventListener('resize', adjustLayout);
         adjustLayout(); 
 
-        // --- ★ カスタム入力関連のイベント登録 ---
         const fileInput = document.getElementById('custom-file-input');
         const btnFile = document.getElementById('custom-file-btn');
         const fileNameDisplay = document.getElementById('custom-file-name');
@@ -187,7 +184,6 @@ GraNotes.UI = (function() {
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                // 古いBlob URLのメモリを解放
                 if (currentCustomAudioUrl && currentCustomAudioUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(currentCustomAudioUrl);
                 }
@@ -195,7 +191,7 @@ GraNotes.UI = (function() {
                 currentCustomFileName = file.name;
                 fileNameDisplay.textContent = file.name;
                 urlInput.value = ''; 
-                localStorage.setItem('GraNotes_CustomUrl', ''); // Blobは保存不可なためクリア
+                localStorage.setItem('GraNotes_CustomUrl', ''); 
             }
         });
 
@@ -347,7 +343,6 @@ GraNotes.UI = (function() {
         drawOffsetPreview();
     }
 
-    // エラーなどのメッセージ表示用ユーティリティ
     function showMessage(msg, isError = false) {
         const msgEl = document.getElementById('loading-msg');
         msgEl.textContent = msg;
@@ -369,7 +364,6 @@ GraNotes.UI = (function() {
 
         const music = GraNotes.MusicList[selectedIndex];
         
-        // ★ カスタム設定時のBPM読み込み
         let bpm = music.bpm;
         if (music.isCustom) {
             bpm = parseFloat(document.getElementById('custom-bpm').value);
@@ -478,7 +472,6 @@ GraNotes.UI = (function() {
         previewAudio.volume = 0; 
         if (previewGain) previewGain.gain.value = 0;
 
-        // dataset.currentSrcで現在のURLを保持して比較（Blob対策）
         if (previewAudio.dataset.currentSrc !== audioUrl) {
             previewAudio.src = audioUrl;
             previewAudio.dataset.currentSrc = audioUrl;
@@ -556,23 +549,32 @@ GraNotes.UI = (function() {
         
         const currentMusic = musicList[selectedIndex];
 
-        // ★ カスタム項目の場合は専用UIを表示
+        // ★ classListを使って表示・非表示を確実に切り替える
         if (currentMusic.isCustom) {
             document.getElementById('select-bg').style.backgroundImage = `linear-gradient(135deg, #0f172a, #000000)`;
             document.getElementById('music-title').textContent = currentMusic.title;
             
-            document.getElementById('music-bpm').style.display = 'none';
-            document.getElementById('music-desc').style.display = 'none';
-            document.getElementById('custom-input-area').style.display = 'flex';
+            document.getElementById('music-bpm').classList.add('hidden');
+            document.getElementById('music-desc').classList.add('hidden');
+            
+            const customArea = document.getElementById('custom-input-area');
+            customArea.classList.remove('hidden');
+            customArea.classList.add('flex');
         } else {
             document.getElementById('select-bg').style.backgroundImage = `url('${ASSET_URL}music/${currentMusic.filename}.png')`;
             document.getElementById('music-title').textContent = currentMusic.title;
             
-            document.getElementById('music-bpm').style.display = 'block';
-            document.getElementById('music-bpm').textContent = `BPM: ${currentMusic.bpm}`;
-            document.getElementById('music-desc').style.display = 'block';
-            document.getElementById('music-desc').textContent = currentMusic.description;
-            document.getElementById('custom-input-area').style.display = 'none';
+            const bpmEl = document.getElementById('music-bpm');
+            bpmEl.classList.remove('hidden');
+            bpmEl.textContent = `BPM: ${currentMusic.bpm}`;
+            
+            const descEl = document.getElementById('music-desc');
+            descEl.classList.remove('hidden');
+            descEl.textContent = currentMusic.description;
+            
+            const customArea = document.getElementById('custom-input-area');
+            customArea.classList.add('hidden');
+            customArea.classList.remove('flex');
         }
         
         GraNotes.State.selectedMusicIndex = selectedIndex;
@@ -657,7 +659,6 @@ GraNotes.UI = (function() {
             let audioUrl = `${ASSET_URL}music/${music.filename}.mp3`;
             let manualBpm = music.bpm;
 
-            // ★ カスタム設定の取得とバリデーション
             if (music.isCustom) {
                 if (!currentCustomAudioUrl) {
                     throw new Error("URLを入力するか、ファイルを選択してください");
