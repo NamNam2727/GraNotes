@@ -129,6 +129,12 @@ GraNotes.Analyzer = (function() {
             // ★ 自己相関で求めたBPMを整数化
             let calculatedBpm = Math.round(bestBpm);
             
+            // ★ BPMが90以下の場合は、2倍にして倍のテンポとして扱う（遅すぎる譜面を防ぐため）
+            if (calculatedBpm <= 90) {
+                console.log(`[GraNotes] Detected BPM (${calculatedBpm}) is too slow. Doubling the BPM.`);
+                calculatedBpm *= 2;
+            }
+            
             // ★ 一般化されたスナップ処理：±2BPM以内なら10刻みにスナップ
             const remainder = calculatedBpm % 10;
             if (remainder <= 2) {
