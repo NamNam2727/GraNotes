@@ -52,6 +52,7 @@ GraNotes.Analyzer = (function() {
 
         // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
         const novelty = [];
+        const hitTimes = [];
         let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
         let noveltySum = 0;
         
@@ -65,6 +66,11 @@ GraNotes.Analyzer = (function() {
             l = Math.sqrt(l/hopSize); 
             m = Math.sqrt(m/hopSize); 
             h = Math.sqrt(h/hopSize);
+            
+            // ★ isMidHit を収集 (phaseOffset 推定用)
+            if (m - tempPrevMid > config.diffThresh && m > config.absThresh) {
+                hitTimes.push(i / sampleRate);
+            }
             
             // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
             const dL = Math.max(0, l - tempPrevLow);
@@ -153,18 +159,17 @@ GraNotes.Analyzer = (function() {
         // ★ Beat Phase (phaseOffset) の推定
         let bestOffset = 0;
         let maxPhaseScore = -Infinity;
-        const offsetStep = 0.02; // 20ms刻み
+        const offsetStep = 0.005; // 5ms刻み
         
         for (let offset = 0; offset < beatDuration; offset += offsetStep) {
             let score = 0;
-            for (let i = 0; i < novelty.length; i++) {
-                if (novelty[i] > 0) {
-                    const time = i * hopSize / sampleRate;
-                    const mod = ((time - offset) % beatDuration + beatDuration) % beatDuration;
-                    // 0 または beatDuration 付近にピークが集中するほど高スコアになるように重み付け
-                    const weight = Math.cos(2 * Math.PI * mod / beatDuration);
-                    score += novelty[i] * weight;
-                }
+            for (let i = 0; i < hitTimes.length; i++) {
+                const time = hitTimes[i];
+                const mod = ((time - offset) % beatDuration + beatDuration) % beatDuration;
+                // 拍頭までの距離を計算 (0 から beatDuration/2 の範囲)
+                const distance = Math.min(mod, beatDuration - mod);
+                // 距離が近いほど高スコアになるように評価
+                score += (beatDuration / 2) - distance;
             }
             if (score > maxPhaseScore) {
                 maxPhaseScore = score;
