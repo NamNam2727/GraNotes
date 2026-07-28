@@ -50,6 +50,43 @@ GraNotes.Analyzer = (function() {
         
         const hopSize = Math.floor(sampleRate * 0.01); 
 
+        // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
+        const novelty = [];
+        let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
+        let noveltySum = 0;
+        
+        for (let i = 0; i < lowData.length; i += hopSize) {
+            let l = 0, m = 0, h = 0;
+            for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
+                l += lowData[i+j]*lowData[i+j]; 
+                m += midData[i+j]*midData[i+j]; 
+                h += highData[i+j]*highData[i+j]; 
+            }
+            l = Math.sqrt(l/hopSize); 
+            m = Math.sqrt(m/hopSize); 
+            h = Math.sqrt(h/hopSize);
+            
+            // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
+            const dL = Math.max(0, l - tempPrevLow);
+            const dM = Math.max(0, m - tempPrevMid);
+            const dH = Math.max(0, h - tempPrevHigh);
+            
+            const flux = dL + dM + dH;
+            novelty.push(flux);
+            noveltySum += flux;
+            
+            tempPrevLow = l; 
+            tempPrevMid = m; 
+            tempPrevHigh = h;
+        }
+        
+        // 直流(DC)成分を取り除くため、平均を引く (Mean Subtraction)
+        // これにより自己相関のベースラインが安定し、周期性が明確になります。
+        const noveltyMean = noveltySum / novelty.length;
+        for (let i = 0; i < novelty.length; i++) {
+            novelty[i] -= noveltyMean;
+        }
+
         // --- 1. BPM設定 (手動指定 or 自動推定) ---
         let beatDuration = 0.5;
 
@@ -58,50 +95,6 @@ GraNotes.Analyzer = (function() {
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Manual): ${state.bpm}`);
         } else {
-            // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
-            const novelty = [];
-            
-            // 30ms前の音量と比較するための履歴配列 (3フレーム = 30ms)
-            let lHist = [0, 0, 0];
-            let mHist = [0, 0, 0];
-            let hHist = [0, 0, 0];
-            let noveltySum = 0;
-            
-            for (let i = 0; i < lowData.length; i += hopSize) {
-                let l = 0, m = 0, h = 0;
-                for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
-                    l += lowData[i+j]*lowData[i+j]; 
-                    m += midData[i+j]*midData[i+j]; 
-                    h += highData[i+j]*highData[i+j]; 
-                }
-                l = Math.sqrt(l/hopSize); 
-                m = Math.sqrt(m/hopSize); 
-                h = Math.sqrt(h/hopSize);
-                
-                const pL = lHist[0];
-                const pM = mHist[0];
-                const pH = hHist[0];
-                
-                // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
-                const dL = Math.max(0, l - pL);
-                const dM = Math.max(0, m - pM);
-                const dH = Math.max(0, h - pH);
-                
-                const flux = dL + dM + dH;
-                novelty.push(flux);
-                noveltySum += flux;
-                
-                lHist.shift(); lHist.push(l);
-                mHist.shift(); mHist.push(m);
-                hHist.shift(); hHist.push(h);
-            }
-            
-            // 直流(DC)成分を取り除くため、平均を引く (Mean Subtraction)
-            const noveltyMean = noveltySum / novelty.length;
-            for (let i = 0; i < novelty.length; i++) {
-                novelty[i] -= noveltyMean;
-            }
-            
             // ★ 自己相関(Auto Correlation)によるBPM推定
             let bestBpm = 120;
             let maxAcf = -Infinity;
@@ -124,6 +117,7 @@ GraNotes.Analyzer = (function() {
                     count++;
                 }
                 
+                // サンプル数で正規化し、短いラグ（早いBPM）へのバイアスを防ぐ
                 if (count > 0) acf /= count;
                 
                 if (acf > maxAcf) {
@@ -132,9 +126,10 @@ GraNotes.Analyzer = (function() {
                 }
             }
             
+            // ★ 自己相関で求めたBPMを整数化
             let calculatedBpm = Math.round(bestBpm);
             
-            // ★ BPMが90以下の場合は、2倍にして倍のテンポとして扱う
+            // ★ BPMが90以下の場合は、2倍にして倍のテンポとして扱う（遅すぎる譜面を防ぐため）
             if (calculatedBpm <= 90) {
                 console.log(`[GraNotes] Detected BPM (${calculatedBpm}) is too slow. Doubling the BPM.`);
                 calculatedBpm *= 2;
@@ -143,9 +138,9 @@ GraNotes.Analyzer = (function() {
             // ★ 一般化されたスナップ処理：±2BPM以内なら10刻みにスナップ
             const remainder = calculatedBpm % 10;
             if (remainder <= 2) {
-                calculatedBpm -= remainder; // 例: 152 -> 150
+                calculatedBpm -= remainder; // 例: 152 -> 150, 151 -> 150
             } else if (remainder >= 8) {
-                calculatedBpm += (10 - remainder); // 例: 148 -> 150
+                calculatedBpm += (10 - remainder); // 例: 148 -> 150, 149 -> 150
             }
 
             state.bpm = calculatedBpm;
@@ -154,6 +149,32 @@ GraNotes.Analyzer = (function() {
         }
 
         state.measureDuration = beatDuration * 4; 
+
+        // ★ Beat Phase (phaseOffset) の推定
+        let bestOffset = 0;
+        let maxPhaseScore = -Infinity;
+        const offsetStep = 0.02; // 20ms刻み
+        
+        for (let offset = 0; offset < beatDuration; offset += offsetStep) {
+            let score = 0;
+            for (let i = 0; i < novelty.length; i++) {
+                if (novelty[i] > 0) {
+                    const time = i * hopSize / sampleRate;
+                    const mod = ((time - offset) % beatDuration + beatDuration) % beatDuration;
+                    // 0 または beatDuration 付近にピークが集中するほど高スコアになるように重み付け
+                    const weight = Math.cos(2 * Math.PI * mod / beatDuration);
+                    score += novelty[i] * weight;
+                }
+            }
+            if (score > maxPhaseScore) {
+                maxPhaseScore = score;
+                bestOffset = offset;
+            }
+        }
+        
+        state.phaseOffset = bestOffset;
+        console.log(`[GraNotes] Phase Offset Applied: ${state.phaseOffset.toFixed(3)} s`);
+
         const CHUNK_DURATION = beatDuration * 8; 
 
         const minIntervalSeconds = beatDuration * minIntervalBeat;
@@ -161,12 +182,7 @@ GraNotes.Analyzer = (function() {
 
         // --- 2. 楽曲構造の詳細リズムパターン解析 ---
         const chunks = []; let currentChunkIndex = -1;
-        
-        // ★ 30ms前の音量と比較するための履歴配列 (3フレーム = 30ms)
-        // これにより、10msの高解像度スキャンでも、以前と同じタイミングでノーツを検知できます
-        let lHistory = [0, 0, 0];
-        let mHistory = [0, 0, 0];
-        let hHistory = [0, 0, 0];
+        let prevLow = 0, prevMid = 0, prevHigh = 0;
         
         const prng = new GraNotes.XorShift(12345);
         const midRmsHistory = [];
@@ -190,23 +206,10 @@ GraNotes.Analyzer = (function() {
             l = Math.sqrt(l/hopSize); m = Math.sqrt(m/hopSize); h = Math.sqrt(h/hopSize);
             midRmsHistory.push({ time: currentTime, rms: m });
 
-            // 1フレーム前ではなく、3フレーム前(30ms前)の音量を取得して比較
-            const pastLow = lHistory[0];
-            const pastMid = mHistory[0];
-            const pastHigh = hHistory[0];
-
-            const lDiff = l - pastLow; 
-            const mDiff = m - pastMid; 
-            const hDiff = h - pastHigh;
-
+            const lDiff = l - prevLow; const mDiff = m - prevMid; const hDiff = h - prevHigh;
             const isLowHit = lDiff > 0.05 && l > 0.06; 
             const isMidHit = mDiff > config.diffThresh && m > config.absThresh; 
             const isHighHit = hDiff > 0.03 && h > 0.04;
-            
-            // 履歴配列を更新
-            lHistory.shift(); lHistory.push(l);
-            mHistory.shift(); mHistory.push(m);
-            hHistory.shift(); hHistory.push(h);
             
             const chunk = chunks[chunkIdx];
             const beatIndex = Math.floor((currentTime % CHUNK_DURATION) / beatDuration);
@@ -220,6 +223,7 @@ GraNotes.Analyzer = (function() {
                 let pitchValue = getPitch(midData, i, hopSize, sampleRate);
                 chunk.notes.push({ time: currentTime, pitch: pitchValue, seedVal: prng.next() });
             }
+            prevLow = l; prevMid = m; prevHigh = h;
         }
 
         for (let i = 1; i < chunks.length; i++) {
@@ -257,7 +261,7 @@ GraNotes.Analyzer = (function() {
         // --- 3. ノーツの統合と相対ピッチによる座標計算 ---
         const notesByMeasure = {};
         rawNotes.forEach(note => {
-            const measureIndex = Math.floor(note.time / state.measureDuration);
+            const measureIndex = Math.floor((note.time - state.phaseOffset) / state.measureDuration);
             if (!notesByMeasure[measureIndex]) notesByMeasure[measureIndex] = [];
             notesByMeasure[measureIndex].push(note);
         });
@@ -297,10 +301,11 @@ GraNotes.Analyzer = (function() {
 
         rawNotes.forEach((note, index) => {
             const time = note.time;
-            const measureIndex = Math.floor(time / state.measureDuration);
+            const measureIndex = Math.floor((time - state.phaseOffset) / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
-            let progressInMeasure = (time - (measureIndex * state.measureDuration)) / state.measureDuration;
+            // 剰余(%)を使わずに進行度を計算し、範囲を確実に0.0〜1.0に収める
+            let progressInMeasure = (time - state.phaseOffset - (measureIndex * state.measureDuration)) / state.measureDuration;
             if (progressInMeasure < 0) progressInMeasure = 0;
             if (progressInMeasure > 1) progressInMeasure = 1;
 
@@ -319,7 +324,7 @@ GraNotes.Analyzer = (function() {
                 const isConnected = isSoundConnected(lastNode.time, time);
                 
                 if ((time - lastNode.time <= maxSliderIntervalSeconds) && 
-                    (Math.floor(lastNode.time / state.measureDuration) === measureIndex) &&
+                    (Math.floor((lastNode.time - state.phaseOffset) / state.measureDuration) === measureIndex) &&
                     isConnected) {
                     isSameGroup = true;
                 }
