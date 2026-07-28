@@ -23,7 +23,8 @@ GraNotes.UI = (function() {
     let lastSysTime = 0;
     let smoothedAudioTime = 0;
 
-    let currentCustomAudioUrl = localStorage.getItem('GraNotes_CustomUrl') || '';
+    // ★ カスタム楽曲用変数 (URLの保存は廃止し、毎回ファイル選択時に生成されるBlobURLのみを使用)
+    let currentCustomAudioUrl = '';
     let currentCustomFileName = '';
 
     function build() {
@@ -78,14 +79,14 @@ GraNotes.UI = (function() {
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
                                 
-                                <!-- ★ カスタム楽曲入力フォーム -->
+                                <!-- ★ カスタム楽曲入力フォーム（URL入力を廃止しローカル専用に） -->
                                 <div id="custom-input-area" class="hidden flex-col w-full mt-1 space-y-2">
-                                    <input type="text" id="custom-url" placeholder="MP3のURL (外部はCORS許可必須)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-full shadow-inner pointer-events-auto">
+                                    <div class="text-[10px] text-teal-300 font-bold mb-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">mp3 または mp4 を選択してください</div>
                                     
                                     <div class="flex items-center space-x-2">
                                         <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow pointer-events-auto">端末から選択</button>
-                                        <input type="file" id="custom-file-input" accept="audio/*" class="hidden">
-                                        <span id="custom-file-name" class="text-[11px] text-gray-400 truncate flex-1 pointer-events-auto">未選択</span>
+                                        <input type="file" id="custom-file-input" accept="audio/*,video/mp4" class="hidden">
+                                        <span id="custom-file-name" class="text-[11px] text-gray-300 truncate flex-1 pointer-events-auto font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">未選択</span>
                                     </div>
 
                                     <div class="flex items-center space-x-2">
@@ -99,6 +100,7 @@ GraNotes.UI = (function() {
                         <div id="loading-msg" class="text-teal-300 font-bold hidden z-10 mb-6 text-center text-sm bg-gray-900 bg-opacity-80 px-6 py-3 rounded-full border border-teal-500"></div>
 
                         <div id="diff-select" class="w-full flex flex-col items-center px-6 pb-6 z-10">
+                            
                             <div id="offset-settings" class="w-full mb-3 relative z-20">
                                 <div class="flex items-center justify-between mb-2 px-1">
                                     <div class="flex items-baseline space-x-2">
@@ -138,7 +140,7 @@ GraNotes.UI = (function() {
                         <h2 class="text-3xl font-black text-white mb-2 mt-4">RESULT</h2>
                         
                         <div class="text-center mb-4 flex flex-col items-center">
-                            <div id="res-music-image" class="w-28 h-28 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30"></div>
+                            <div id="res-music-image" class="w-28 h-28 rounded-2xl bg-cover bg-center mb-3 shadow-[0_0_15px_rgba(94,234,212,0.3)] border-2 border-teal-500/30 overflow-hidden relative"></div>
                             <div id="res-music-title" class="text-xl font-bold text-teal-300 px-4 leading-tight mb-1"></div>
                             <div id="res-music-diff" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-300 border border-gray-600"></div>
                         </div>
@@ -172,11 +174,10 @@ GraNotes.UI = (function() {
         const fileInput = document.getElementById('custom-file-input');
         const btnFile = document.getElementById('custom-file-btn');
         const fileNameDisplay = document.getElementById('custom-file-name');
-        const urlInput = document.getElementById('custom-url');
         const bpmInput = document.getElementById('custom-bpm');
         const btnPreview = document.getElementById('btn-custom-preview');
 
-        urlInput.value = currentCustomAudioUrl;
+        // BPMのみローカルストレージから復元
         bpmInput.value = localStorage.getItem('GraNotes_CustomBpm') || '';
 
         btnFile.addEventListener('click', () => fileInput.click());
@@ -184,23 +185,14 @@ GraNotes.UI = (function() {
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
-                if (currentCustomAudioUrl && currentCustomAudioUrl.startsWith('blob:')) {
+                if (currentCustomAudioUrl) {
                     URL.revokeObjectURL(currentCustomAudioUrl);
                 }
+                // ファイルから一時的なBlob URLを生成
                 currentCustomAudioUrl = URL.createObjectURL(file);
                 currentCustomFileName = file.name;
                 fileNameDisplay.textContent = file.name;
-                urlInput.value = ''; 
-                localStorage.setItem('GraNotes_CustomUrl', ''); 
             }
-        });
-
-        urlInput.addEventListener('input', (e) => {
-            currentCustomAudioUrl = e.target.value.trim();
-            currentCustomFileName = '';
-            fileNameDisplay.textContent = '未選択';
-            localStorage.setItem('GraNotes_CustomUrl', currentCustomAudioUrl);
-            fileInput.value = ''; 
         });
 
         bpmInput.addEventListener('input', (e) => {
@@ -211,7 +203,7 @@ GraNotes.UI = (function() {
             if (currentCustomAudioUrl) {
                 playPreview();
             } else {
-                showMessage("URLを入力するか、ファイルを選択してください", true);
+                showMessage("楽曲ファイルを選択してください", true);
             }
         });
 
@@ -276,9 +268,16 @@ GraNotes.UI = (function() {
             item.id = `carousel-item-${index}`;
             item.className = 'carousel-item hidden-item'; 
             
+            // ★ カスタム項目のアイコンを音符マークに変更
             if (music.isCustom) {
                 item.style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
-                item.innerHTML = `<div class="w-full h-full flex justify-center items-center font-black text-gray-400 text-xl tracking-wider">URL</div>`;
+                item.innerHTML = `
+                    <div class="w-full h-full flex flex-col justify-center items-center text-gray-400">
+                        <svg class="w-8 h-8 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                        </svg>
+                        <span class="text-xs font-bold tracking-wider">LOCAL</span>
+                    </div>`;
             } else {
                 item.style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
             }
@@ -452,15 +451,14 @@ GraNotes.UI = (function() {
         let pStart = music.previewStart;
         let pEnd = music.previewEnd;
 
-        // ★ カスタム設定時のプレビュー再生
         if (music.isCustom) {
             if (!currentCustomAudioUrl) {
                 stopPreview();
                 return;
             }
             audioUrl = currentCustomAudioUrl;
-            pStart = 0;       // 0秒から開始
-            pEnd = 999999;    // 事実上最後まで再生
+            pStart = 0;       // ★ 0秒から開始
+            pEnd = 999999;    
         }
 
         if (previewAnimationFrame) {
@@ -549,7 +547,6 @@ GraNotes.UI = (function() {
         
         const currentMusic = musicList[selectedIndex];
 
-        // ★ classListを使って表示・非表示を確実に切り替える
         if (currentMusic.isCustom) {
             document.getElementById('select-bg').style.backgroundImage = `linear-gradient(135deg, #0f172a, #000000)`;
             document.getElementById('music-title').textContent = currentMusic.title;
@@ -661,7 +658,7 @@ GraNotes.UI = (function() {
 
             if (music.isCustom) {
                 if (!currentCustomAudioUrl) {
-                    throw new Error("URLを入力するか、ファイルを選択してください");
+                    throw new Error("楽曲ファイルを選択してください");
                 }
                 audioUrl = currentCustomAudioUrl;
                 
@@ -678,7 +675,7 @@ GraNotes.UI = (function() {
             }
 
             const response = await fetch(audioUrl);
-            if (!response.ok) throw new Error("楽曲ファイルが見つかりません (またはCORS制限)");
+            if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
             const arrayBuffer = await response.arrayBuffer();
             
             loadingMsg.textContent = "音声をデコード中...";
@@ -760,10 +757,19 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
+        // ★ リザルト画面の画像もアイコンに変更
         if (music.isCustom) {
             document.getElementById('res-music-image').style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
+            document.getElementById('res-music-image').innerHTML = `
+                <div class="w-full h-full flex flex-col justify-center items-center text-gray-400">
+                    <svg class="w-10 h-10 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                    </svg>
+                    <span class="text-sm font-bold tracking-wider">LOCAL</span>
+                </div>`;
         } else {
             document.getElementById('res-music-image').style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
+            document.getElementById('res-music-image').innerHTML = '';
         }
         
         document.getElementById('res-music-title').textContent = music.title;
