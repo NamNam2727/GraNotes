@@ -76,20 +76,23 @@ GraNotes.UI = (function() {
                             <div class="ml-5 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
                                 <h2 id="music-title" class="text-lg font-bold text-white mb-1 leading-tight"></h2>
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
-                                <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
+                                <div id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md max-h-24 overflow-y-auto"></div>
                                 
-                                <div id="custom-input-area" class="hidden flex-col w-full mt-1 space-y-2">
-                                    <div class="text-[10px] text-teal-300 font-bold mb-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">mp3 または mp4 を選択してください</div>
+                                <!-- ★ カスタム楽曲入力フォーム -->
+                                <div id="custom-input-area" class="hidden flex-col w-full mt-1 space-y-3">
+                                    <div class="text-[10px] text-teal-300 font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">mp3 または mp4 を選択してください</div>
                                     
                                     <div class="flex items-center space-x-2">
                                         <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow pointer-events-auto">端末から選択</button>
-                                        <input type="file" id="custom-file-input" accept="audio/*,video/mp4" class="hidden">
+                                        <!-- ★ iOS等で確実にmp3が選べるように拡張子を明示 -->
+                                        <input type="file" id="custom-file-input" accept=".mp3,audio/mpeg,audio/mp3,.mp4,video/mp4,audio/*,video/*" class="hidden">
                                         <span id="custom-file-name" class="text-[11px] text-gray-300 truncate flex-1 pointer-events-auto font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">未選択</span>
                                     </div>
 
                                     <div class="flex items-center space-x-2">
-                                        <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner pointer-events-auto">
-                                        <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto">プレビュー</button>
+                                        <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-24 shadow-inner pointer-events-auto">
+                                        <!-- ★ プレビューボタンが隠れないようにレイアウト調整 -->
+                                        <button id="btn-custom-preview" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-2 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto text-center">▶ プレビュー</button>
                                     </div>
                                 </div>
                             </div>
@@ -776,7 +779,6 @@ GraNotes.UI = (function() {
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
 
-        // ★ カスタム楽曲の場合はランキングデータ（スコア）を送信しない
         if (!music.isCustom) {
             setTimeout(() => {
                 reportScore(finalScore);
