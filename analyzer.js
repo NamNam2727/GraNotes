@@ -156,29 +156,87 @@ GraNotes.Analyzer = (function() {
 
         state.measureDuration = beatDuration * 4; 
 
-        // ★ Beat Phase (phaseOffset) の推定
-        let bestOffset = 0;
-        let maxPhaseScore = -Infinity;
-        const offsetStep = 0.005; // 5ms刻み
+        // ★ Dynamic Programming (DP) による Beat Tracking で phaseOffset を推定
+        const beatPeriod = Math.round(beatDuration * sampleRate / hopSize);
+        const C = new Float32Array(novelty.length);
+        const P = new Int32Array(novelty.length);
         
-        for (let offset = 0; offset < beatDuration; offset += offsetStep) {
-            let score = 0;
-            for (let i = 0; i < hitTimes.length; i++) {
-                const time = hitTimes[i];
-                const mod = ((time - offset) % beatDuration + beatDuration) % beatDuration;
-                // 拍頭までの距離を計算 (0 から beatDuration/2 の範囲)
-                const distance = Math.min(mod, beatDuration - mod);
-                // 距離が近いほど高スコアになるように評価
-                score += (beatDuration / 2) - distance;
+        // DPスコアのバランスを取るため、正のnovelty成分の平均で正規化係数を計算
+        let posSum = 0;
+        let posCount = 0;
+        for (let i = 0; i < novelty.length; i++) {
+            if (novelty[i] > 0) {
+                posSum += novelty[i];
+                posCount++;
             }
-            if (score > maxPhaseScore) {
-                maxPhaseScore = score;
-                bestOffset = offset;
+        }
+        const normFactor = (posCount > 0 && posSum > 0) ? 1.0 / (posSum / posCount) : 1.0;
+        
+        const minSearch = Math.max(1, Math.round(beatPeriod * 0.5));
+        const maxSearch = Math.round(beatPeriod * 2.0);
+        const alpha = 100.0; // 遷移ペナルティの重み（等間隔をどの程度強制するか）
+        
+        // DPで累積スコアと経路を計算
+        for (let i = 0; i < novelty.length; i++) {
+            // 観測スコア (負の値は0にクリップし、平均1程度になるよう正規化)
+            const obs = novelty[i] > 0 ? novelty[i] * normFactor : 0;
+            
+            let maxTransScore = -Infinity;
+            let bestPrevBeat = -1;
+            
+            // 直前のビート位置を探索
+            for (let lag = minSearch; lag <= maxSearch; lag++) {
+                const prevBeat = i - lag;
+                if (prevBeat < 0) continue;
+                
+                // 理想的な間隔(beatPeriod)から外れるほどペナルティを与える
+                const penalty = -alpha * Math.pow(Math.log2(lag / beatPeriod), 2);
+                const transScore = C[prevBeat] + penalty;
+                
+                if (transScore > maxTransScore) {
+                    maxTransScore = transScore;
+                    bestPrevBeat = prevBeat;
+                }
+            }
+            
+            if (bestPrevBeat === -1) {
+                C[i] = obs;
+                P[i] = -1;
+            } else {
+                C[i] = maxTransScore + obs;
+                P[i] = bestPrevBeat;
             }
         }
         
-        state.phaseOffset = bestOffset;
-        console.log(`[GraNotes] Phase Offset Applied: ${state.phaseOffset.toFixed(3)} s`);
+        // バックトラックでBeat列を取得
+        let bestLastBeat = -1;
+        let maxC = -Infinity;
+        for (let i = 0; i < novelty.length; i++) {
+            if (C[i] > maxC) {
+                maxC = C[i];
+                bestLastBeat = i;
+            }
+        }
+        
+        const beats = [];
+        let curr = bestLastBeat;
+        while (curr !== -1) {
+            beats.push(curr);
+            curr = P[curr];
+        }
+        beats.reverse(); // 時系列順(前から後ろ)に反転
+        
+        // 最初のBeat時刻からphaseOffsetを決定
+        const frameDuration = hopSize / sampleRate;
+        if (beats.length > 0) {
+            const firstBeatTime = beats[0] * frameDuration;
+            // 0 〜 beatDuration の範囲に収める
+            state.phaseOffset = ((firstBeatTime % beatDuration) + beatDuration) % beatDuration;
+        } else {
+            state.phaseOffset = 0;
+        }
+        
+        console.log(`[GraNotes] Phase Offset Applied (via DP Beat Tracking): ${state.phaseOffset.toFixed(3)} s`);
 
         const CHUNK_DURATION = beatDuration * 8; 
 
