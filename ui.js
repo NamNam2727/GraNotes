@@ -23,7 +23,6 @@ GraNotes.UI = (function() {
     let lastSysTime = 0;
     let smoothedAudioTime = 0;
 
-    // ★ カスタム楽曲用変数 (URLの保存は廃止し、毎回ファイル選択時に生成されるBlobURLのみを使用)
     let currentCustomAudioUrl = '';
     let currentCustomFileName = '';
 
@@ -79,7 +78,6 @@ GraNotes.UI = (function() {
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
                                 
-                                <!-- ★ カスタム楽曲入力フォーム（URL入力を廃止しローカル専用に） -->
                                 <div id="custom-input-area" class="hidden flex-col w-full mt-1 space-y-2">
                                     <div class="text-[10px] text-teal-300 font-bold mb-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">mp3 または mp4 を選択してください</div>
                                     
@@ -177,7 +175,6 @@ GraNotes.UI = (function() {
         const bpmInput = document.getElementById('custom-bpm');
         const btnPreview = document.getElementById('btn-custom-preview');
 
-        // BPMのみローカルストレージから復元
         bpmInput.value = localStorage.getItem('GraNotes_CustomBpm') || '';
 
         btnFile.addEventListener('click', () => fileInput.click());
@@ -188,7 +185,6 @@ GraNotes.UI = (function() {
                 if (currentCustomAudioUrl) {
                     URL.revokeObjectURL(currentCustomAudioUrl);
                 }
-                // ファイルから一時的なBlob URLを生成
                 currentCustomAudioUrl = URL.createObjectURL(file);
                 currentCustomFileName = file.name;
                 fileNameDisplay.textContent = file.name;
@@ -268,7 +264,6 @@ GraNotes.UI = (function() {
             item.id = `carousel-item-${index}`;
             item.className = 'carousel-item hidden-item'; 
             
-            // ★ カスタム項目のアイコンを音符マークに変更
             if (music.isCustom) {
                 item.style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
                 item.innerHTML = `
@@ -457,7 +452,7 @@ GraNotes.UI = (function() {
                 return;
             }
             audioUrl = currentCustomAudioUrl;
-            pStart = 0;       // ★ 0秒から開始
+            pStart = 0;       
             pEnd = 999999;    
         }
 
@@ -757,7 +752,6 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
-        // ★ リザルト画面の画像もアイコンに変更
         if (music.isCustom) {
             document.getElementById('res-music-image').style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
             document.getElementById('res-music-image').innerHTML = `
@@ -782,9 +776,14 @@ GraNotes.UI = (function() {
         document.getElementById('res-miss').textContent = state.stats.miss;
         document.getElementById('res-combo').textContent = state.maxCombo;
 
-        setTimeout(() => {
-            reportScore(finalScore);
-        }, 500);
+        // ★ カスタム楽曲の場合はランキングデータ（スコア）を送信しない
+        if (!music.isCustom) {
+            setTimeout(() => {
+                reportScore(finalScore);
+            }, 500);
+        } else {
+            console.log("カスタム楽曲のためスコア送信をスキップしました。");
+        }
     }
 
     window.GraNotesUI = {
