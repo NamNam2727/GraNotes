@@ -28,7 +28,6 @@ GraNotes.Analyzer = (function() {
         const duration = buffer.duration; 
         const sampleRate = buffer.sampleRate;
         
-        // ★ 修正点: 一部のブラウザで小数を渡すとエラーになって止まるため、Math.ceilで確実に整数にする
         const offlineCtx = new OfflineAudioContext(3, Math.ceil(duration * sampleRate), sampleRate);
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buffer;
@@ -78,19 +77,44 @@ GraNotes.Analyzer = (function() {
                 }
             }
             
-            let histogram = {}; const BIN_SIZE = 0.01; 
-            intervals.forEach(int => { let bin = Math.round(int / BIN_SIZE); histogram[bin] = (histogram[bin] || 0) + 1; });
-            let maxCount = 0, bestBinIndex = 50;
-            for(let bin in histogram) { if(histogram[bin] > maxCount) { maxCount = histogram[bin]; bestBinIndex = parseInt(bin); } }
+            // ★ 解析の精度を0.01秒から0.005秒（5ミリ秒）に向上
+            let histogram = {}; 
+            const BIN_SIZE = 0.005; 
+            
+            intervals.forEach(int => { 
+                let bin = Math.round(int / BIN_SIZE); 
+                histogram[bin] = (histogram[bin] || 0) + 1; 
+            });
+            
+            let maxCount = 0, bestBinIndex = 80;
+            for(let bin in histogram) { 
+                if(histogram[bin] > maxCount) { 
+                    maxCount = histogram[bin]; 
+                    bestBinIndex = parseInt(bin); 
+                } 
+            }
+            
             let sumWeights = 0; let sumValues = 0;
-            for(let i = bestBinIndex - 1; i <= bestBinIndex + 1; i++) {
-                if(histogram[i]) { sumWeights += histogram[i]; sumValues += histogram[i] * (i * BIN_SIZE); }
+            // ★ 頂点だけでなく、±2ビン（計5ビン）の広い範囲で加重平均をとることでブレを吸収
+            for(let i = bestBinIndex - 2; i <= bestBinIndex + 2; i++) {
+                if(histogram[i]) { 
+                    sumWeights += histogram[i]; 
+                    sumValues += histogram[i] * (i * BIN_SIZE); 
+                }
             }
             
             beatDuration = sumWeights > 0 ? sumValues / sumWeights : (bestBinIndex * BIN_SIZE);
-            if (beatDuration < 0.35) beatDuration *= 2; 
+            
+            // ★ テンポが極端に速い場合（約181BPM以上）は、半分のテンポとして解釈する
+            if (beatDuration < 0.33) beatDuration *= 2; 
 
-            state.bpm = Math.round(60 / beatDuration);
+            let calculatedBpm = Math.round(60 / beatDuration);
+            
+            // ★ 149や151など「5の倍数」からわずかに1だけズレた場合は、5の倍数に吸着（スナップ）させる
+            if (calculatedBpm % 5 === 1) calculatedBpm -= 1;
+            if (calculatedBpm % 5 === 4) calculatedBpm += 1;
+
+            state.bpm = calculatedBpm;
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Auto): ${state.bpm}`);
         }
@@ -168,10 +192,8 @@ GraNotes.Analyzer = (function() {
             sourceNotes.forEach(note => allNotes.push(note));
         });
 
-        // 完全に時間順に並べ替える
         allNotes.sort((a, b) => a.time - b.time);
 
-        // 並べ替え後に間引きを行う（チャンク境界の重複・逆走を完全に排除）
         let rawNotes = [];
         let lastTime = -100;
         allNotes.forEach(note => {
@@ -227,7 +249,6 @@ GraNotes.Analyzer = (function() {
             const measureIndex = Math.floor(time / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
-            // 剰余(%)を使わずに進行度を計算し、範囲を確実に0.0〜1.0に収める
             let progressInMeasure = (time - (measureIndex * state.measureDuration)) / state.measureDuration;
             if (progressInMeasure < 0) progressInMeasure = 0;
             if (progressInMeasure > 1) progressInMeasure = 1;
