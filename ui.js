@@ -39,6 +39,19 @@ GraNotes.UI = (function() {
             lastTouchEnd = now;
         }, { passive: false });
 
+        // ★ music.js を書き換えず、動的に末尾に「カスタムURL」項目を追加
+        if (!GraNotes.MusicList.find(m => m.isCustom)) {
+            GraNotes.MusicList.push({
+                title: "カスタムURL",
+                filename: "custom",
+                bpm: null,
+                previewStart: 0,
+                previewEnd: 0,
+                description: "",
+                isCustom: true
+            });
+        }
+
         const app = document.getElementById('app');
         
         app.innerHTML = `
@@ -64,6 +77,12 @@ GraNotes.UI = (function() {
                                 <h2 id="music-title" class="text-lg font-bold text-white mb-1 leading-tight"></h2>
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <p id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md"></p>
+                                
+                                <!-- ★ カスタムURL入力フォーム（最初は非表示） -->
+                                <div id="custom-input-area" class="hidden flex-col w-full mt-1">
+                                    <input type="text" id="custom-url" placeholder="MP3のURL (CORS許可必須)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 mb-2 focus:border-teal-400 outline-none w-full shadow-inner">
+                                    <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-full shadow-inner">
+                                </div>
                             </div>
                         </div>
 
@@ -71,14 +90,12 @@ GraNotes.UI = (function() {
 
                         <div id="diff-select" class="w-full flex flex-col items-center px-6 pb-6 z-10">
                             
-                            <!-- ★ スライダーを上に押し上げ、タップ調整用のUIに改修 -->
                             <div id="offset-settings" class="w-full mb-3 relative z-20">
                                 <div class="flex items-center justify-between mb-2 px-1">
                                     <div class="flex items-baseline space-x-2">
                                         <span class="text-sm text-gray-200 font-bold tracking-wider" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">タイミング調整(遅延):</span>
                                         <span id="offset-val-display" class="text-teal-400 font-bold text-base font-mono leading-none" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">0.10s</span>
                                     </div>
-                                    <!-- ★ タップで自動調整できるプレビューキャンバス -->
                                     <div id="calibration-btn" class="relative w-10 h-10 rounded-full border-2 border-gray-500 overflow-hidden bg-black bg-opacity-60 cursor-pointer flex justify-center items-center transition-transform shadow-[0_0_8px_rgba(20,184,166,0.3)]">
                                         <canvas id="offset-preview-canvas" width="40" height="40" class="absolute top-0 left-0"></canvas>
                                         <span class="absolute text-[10px] font-black text-white opacity-60 pointer-events-none" style="text-shadow: 0 0 2px black;">TAP</span>
@@ -87,7 +104,6 @@ GraNotes.UI = (function() {
                                 <input type="range" id="offset-slider" min="0" max="0.30" step="0.01" value="0.10" class="w-full h-2 bg-gray-500 rounded-full appearance-none cursor-pointer accent-teal-400 border border-gray-800">
                             </div>
 
-                            <!-- ★ 文字の再挿入 -->
                             <p class="text-sm text-gray-200 mb-2 font-bold" style="text-shadow: 0 2px 4px rgba(0,0,0,0.8);">難易度を選択してスタート</p>
 
                             <div id="diff-buttons" class="w-full flex flex-col space-y-2">
@@ -145,6 +161,10 @@ GraNotes.UI = (function() {
         window.addEventListener('resize', adjustLayout);
         adjustLayout(); 
 
+        // ★ 保存されているURLとBPMがあれば入力欄にセット
+        document.getElementById('custom-url').value = localStorage.getItem('GraNotes_CustomUrl') || '';
+        document.getElementById('custom-bpm').value = localStorage.getItem('GraNotes_CustomBpm') || '';
+
         const diffSelect = document.getElementById('diff-buttons'); 
         const screenTitle = document.getElementById('screen-title');
         const screenResult = document.getElementById('screen-result');
@@ -163,37 +183,29 @@ GraNotes.UI = (function() {
             localStorage.setItem('GraNotes_NoteOffset', val.toString());
         });
 
-        // --- ★ 音に合わせてタップした際の自動キャリブレーション処理 ---
         const calibBtn = document.getElementById('calibration-btn');
         function handleCalibrationTap(e) {
             e.preventDefault();
             e.stopPropagation();
             if (!isPreviewAllowed || previewAudio.paused) return;
             const music = GraNotes.MusicList[selectedIndex];
-            if (!music || !music.bpm) return;
+            // カスタムの時はプレビューが鳴らないので無効
+            if (!music || !music.bpm || music.isCustom) return; 
             
             const beatDuration = 60 / music.bpm;
-            const testInterval = beatDuration * 4; // 4拍ごとの基準
+            const testInterval = beatDuration * 4; 
             
-            // ユーザーが「音を聴いて叩いた」瞬間のオーディオ再生時間
             const tapTime = smoothedAudioTime;
-            
-            // 本来ノーツが降ってくるべき最も近い基準タイム（拍の頭）を計算
             const targetBeatTime = Math.round(tapTime / testInterval) * testInterval;
-            
-            // ズレ（遅延）を計算
             let newOffset = tapTime - targetBeatTime;
             
-            // 指定範囲 (0.00s 〜 0.30s) に収める
             newOffset = Math.max(0, Math.min(0.30, newOffset));
             
-            // 設定を更新して保存
             GraNotes.Settings.noteOffset = newOffset;
             slider.value = newOffset.toFixed(2);
             display.textContent = newOffset.toFixed(2) + 's';
             localStorage.setItem('GraNotes_NoteOffset', newOffset.toString());
             
-            // タップが成功したことの視覚的フィードバック（ボタンが縮んで黄色く光る）
             calibBtn.style.transform = 'scale(0.8)';
             calibBtn.style.borderColor = '#fde047';
             setTimeout(() => { 
@@ -204,13 +216,20 @@ GraNotes.UI = (function() {
         calibBtn.addEventListener('mousedown', handleCalibrationTap);
         calibBtn.addEventListener('touchstart', handleCalibrationTap, {passive: false});
 
-
         const carouselContainer = document.getElementById('carousel-container');
         GraNotes.MusicList.forEach((music, index) => {
             const item = document.createElement('div');
             item.id = `carousel-item-${index}`;
             item.className = 'carousel-item hidden-item'; 
-            item.style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
+            
+            // ★ カスタム項目の場合は画像をグラデーションにし、URLの文字を入れる
+            if (music.isCustom) {
+                item.style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
+                item.innerHTML = `<div class="w-full h-full flex justify-center items-center font-black text-gray-400 text-xl tracking-wider">URL</div>`;
+            } else {
+                item.style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
+            }
+            
             carouselContainer.appendChild(item);
         });
         
@@ -283,7 +302,8 @@ GraNotes.UI = (function() {
         ctx.clearRect(0, 0, width, height);
 
         const music = GraNotes.MusicList[selectedIndex];
-        if (!music || !music.bpm) return;
+        // ★ カスタム項目の場合はプレビュー音が鳴らないためアニメーションも止める
+        if (!music || !music.bpm || music.isCustom) return;
         
         const offset = GraNotes.Settings.noteOffset;
         const beatDuration = 60 / music.bpm;
@@ -361,7 +381,12 @@ GraNotes.UI = (function() {
         if (!isPreviewAllowed) return; 
         
         const music = GraNotes.MusicList[selectedIndex];
-        if (!music) return;
+        
+        // ★ カスタム項目の場合はプレビューを鳴らさずに止める
+        if (!music || music.isCustom) {
+            stopPreview();
+            return;
+        }
 
         if (previewAnimationFrame) {
             cancelAnimationFrame(previewAnimationFrame);
@@ -448,10 +473,26 @@ GraNotes.UI = (function() {
             }
         }
         
-        document.getElementById('select-bg').style.backgroundImage = `url('${ASSET_URL}music/${musicList[selectedIndex].filename}.png')`;
-        document.getElementById('music-title').textContent = musicList[selectedIndex].title;
-        document.getElementById('music-bpm').textContent = `BPM: ${musicList[selectedIndex].bpm}`;
-        document.getElementById('music-desc').textContent = musicList[selectedIndex].description;
+        const currentMusic = musicList[selectedIndex];
+
+        // ★ カスタム項目の場合は背景を暗くし、専用の入力フォームを表示する
+        if (currentMusic.isCustom) {
+            document.getElementById('select-bg').style.backgroundImage = `linear-gradient(135deg, #0f172a, #000000)`;
+            document.getElementById('music-title').textContent = currentMusic.title;
+            
+            document.getElementById('music-bpm').style.display = 'none';
+            document.getElementById('music-desc').style.display = 'none';
+            document.getElementById('custom-input-area').style.display = 'flex';
+        } else {
+            document.getElementById('select-bg').style.backgroundImage = `url('${ASSET_URL}music/${currentMusic.filename}.png')`;
+            document.getElementById('music-title').textContent = currentMusic.title;
+            
+            document.getElementById('music-bpm').style.display = 'block';
+            document.getElementById('music-bpm').textContent = `BPM: ${currentMusic.bpm}`;
+            document.getElementById('music-desc').style.display = 'block';
+            document.getElementById('music-desc').textContent = currentMusic.description;
+            document.getElementById('custom-input-area').style.display = 'none';
+        }
         
         GraNotes.State.selectedMusicIndex = selectedIndex;
 
@@ -531,7 +572,28 @@ GraNotes.UI = (function() {
         try {
             const state = GraNotes.State;
             const music = GraNotes.MusicList[selectedIndex];
-            const manualBpm = music.bpm; 
+            
+            // ★ カスタムURLとBPMの取得処理
+            let audioUrl = `${ASSET_URL}music/${music.filename}.mp3`;
+            let manualBpm = music.bpm;
+
+            if (music.isCustom) {
+                const urlInput = document.getElementById('custom-url').value.trim();
+                const bpmInput = document.getElementById('custom-bpm').value.trim();
+                
+                if (!urlInput) {
+                    throw new Error("URLを入力してください");
+                }
+                audioUrl = urlInput;
+                
+                const parsedBpm = parseFloat(bpmInput);
+                // 空欄や無効な数値の場合は null を渡し、analyzer.jsの自動検出に任せる
+                manualBpm = (!isNaN(parsedBpm) && parsedBpm > 0) ? parsedBpm : null;
+
+                // 次回のためにローカルストレージへ保存
+                localStorage.setItem('GraNotes_CustomUrl', urlInput);
+                localStorage.setItem('GraNotes_CustomBpm', bpmInput);
+            }
             
             if (!state.audioContext) {
                 state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -540,8 +602,9 @@ GraNotes.UI = (function() {
                 await state.audioContext.resume();
             }
 
-            const response = await fetch(`${ASSET_URL}music/${music.filename}.mp3`);
-            if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
+            // ★ 指定されたURL（外部または内部）から音声データを取得
+            const response = await fetch(audioUrl);
+            if (!response.ok) throw new Error("楽曲ファイルが見つかりません (またはCORS制限)");
             const arrayBuffer = await response.arrayBuffer();
             
             loadingMsg.textContent = "音声をデコード中...";
@@ -551,6 +614,7 @@ GraNotes.UI = (function() {
             setTimeout(async () => {
                 try {
                     const maxSliderIntervalBeat = minIntervalBeat * 3.0; 
+                    // ★ 取得した manualBpm（nullの場合は自動検出）を渡して解析
                     await GraNotes.Analyzer.generateMap(state.audioBuffer, minIntervalBeat, maxSliderIntervalBeat, manualBpm);
                     
                     document.getElementById('screen-title').classList.add('hidden');
@@ -627,7 +691,13 @@ GraNotes.UI = (function() {
         document.getElementById('hud-layer').classList.add('hidden');
         document.getElementById('screen-result').classList.remove('hidden');
 
-        document.getElementById('res-music-image').style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
+        // ★ カスタム項目の場合は画像をグラデーションにする
+        if (music.isCustom) {
+            document.getElementById('res-music-image').style.backgroundImage = `linear-gradient(135deg, #334155, #0f172a)`;
+        } else {
+            document.getElementById('res-music-image').style.backgroundImage = `url('${ASSET_URL}music/${music.filename}.png')`;
+        }
+        
         document.getElementById('res-music-title').textContent = music.title;
         document.getElementById('res-music-diff').textContent = selectedDifficultyName;
 
