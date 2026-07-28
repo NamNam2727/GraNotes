@@ -28,6 +28,7 @@ GraNotes.Analyzer = (function() {
         const duration = buffer.duration; 
         const sampleRate = buffer.sampleRate;
         
+        // ★ 修正点: 一部のブラウザで小数を渡すとエラーになって止まるため、Math.ceilで確実に整数にする
         const offlineCtx = new OfflineAudioContext(3, Math.ceil(duration * sampleRate), sampleRate);
         const source = offlineCtx.createBufferSource(); 
         source.buffer = buffer;
@@ -57,66 +58,88 @@ GraNotes.Analyzer = (function() {
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Manual): ${state.bpm}`);
         } else {
-            let tempOnsets = []; let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
+            // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
+            const novelty = [];
+            let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
+            let noveltySum = 0;
+            
             for (let i = 0; i < lowData.length; i += hopSize) {
-                let l=0, m=0, h=0;
+                let l = 0, m = 0, h = 0;
                 for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
-                    l += lowData[i+j]*lowData[i+j]; m += midData[i+j]*midData[i+j]; h += highData[i+j]*highData[i+j]; 
+                    l += lowData[i+j]*lowData[i+j]; 
+                    m += midData[i+j]*midData[i+j]; 
+                    h += highData[i+j]*highData[i+j]; 
                 }
-                l = Math.sqrt(l/hopSize); m = Math.sqrt(m/hopSize); h = Math.sqrt(h/hopSize);
-                if ((l - tempPrevLow > 0.04 && l > 0.05) || (m - tempPrevMid > 0.02 && m > 0.035) || (h - tempPrevHigh > 0.03 && h > 0.04)) {
-                    tempOnsets.push(i / sampleRate);
-                }
-                tempPrevLow = l; tempPrevMid = m; tempPrevHigh = h;
+                l = Math.sqrt(l/hopSize); 
+                m = Math.sqrt(m/hopSize); 
+                h = Math.sqrt(h/hopSize);
+                
+                // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
+                const dL = Math.max(0, l - tempPrevLow);
+                const dM = Math.max(0, m - tempPrevMid);
+                const dH = Math.max(0, h - tempPrevHigh);
+                
+                const flux = dL + dM + dH;
+                novelty.push(flux);
+                noveltySum += flux;
+                
+                tempPrevLow = l; 
+                tempPrevMid = m; 
+                tempPrevHigh = h;
             }
             
-            let intervals = [];
-            for(let i=0; i<tempOnsets.length; i++) {
-                for(let j=1; j<=4 && i+j < tempOnsets.length; j++) { 
-                    let diff = tempOnsets[i+j] - tempOnsets[i]; if(diff >= 0.2 && diff <= 1.5) intervals.push(diff);
+            // 直流(DC)成分を取り除くため、平均を引く (Mean Subtraction)
+            // これにより自己相関のベースラインが安定し、周期性が明確になります。
+            const noveltyMean = noveltySum / novelty.length;
+            for (let i = 0; i < novelty.length; i++) {
+                novelty[i] -= noveltyMean;
+            }
+            
+            // ★ 自己相関(Auto Correlation)によるBPM推定
+            let bestBpm = 120;
+            let maxAcf = -Infinity;
+            const frameRate = sampleRate / hopSize; 
+            
+            // 候補BPM範囲 70〜200 を 0.1 刻みで評価
+            for (let bpm = 70; bpm <= 200; bpm += 0.1) {
+                const lag = (60 / bpm) * frameRate;
+                const lagInt = Math.floor(lag);
+                const lagFrac = lag - lagInt;
+                
+                let acf = 0;
+                let count = 0;
+                const maxI = novelty.length - lagInt - 1;
+                
+                for (let i = 0; i < maxI; i++) {
+                    // 線形補間による遅延サンプルの取得で精度を担保
+                    const delayed = novelty[i + lagInt] * (1 - lagFrac) + novelty[i + lagInt + 1] * lagFrac;
+                    acf += novelty[i] * delayed;
+                    count++;
+                }
+                
+                // サンプル数で正規化し、短いラグ（早いBPM）へのバイアスを防ぐ
+                if (count > 0) acf /= count;
+                
+                if (acf > maxAcf) {
+                    maxAcf = acf;
+                    bestBpm = bpm;
                 }
             }
             
-            // ★ 解析の精度を0.01秒から0.005秒（5ミリ秒）に向上
-            let histogram = {}; 
-            const BIN_SIZE = 0.005; 
+            // ★ 自己相関で求めたBPMを整数化
+            let calculatedBpm = Math.round(bestBpm);
             
-            intervals.forEach(int => { 
-                let bin = Math.round(int / BIN_SIZE); 
-                histogram[bin] = (histogram[bin] || 0) + 1; 
-            });
-            
-            let maxCount = 0, bestBinIndex = 80;
-            for(let bin in histogram) { 
-                if(histogram[bin] > maxCount) { 
-                    maxCount = histogram[bin]; 
-                    bestBinIndex = parseInt(bin); 
-                } 
+            // ★ 一般化されたスナップ処理：±2BPM以内なら10刻みにスナップ
+            const remainder = calculatedBpm % 10;
+            if (remainder <= 2) {
+                calculatedBpm -= remainder; // 例: 152 -> 150, 151 -> 150
+            } else if (remainder >= 8) {
+                calculatedBpm += (10 - remainder); // 例: 148 -> 150, 149 -> 150
             }
-            
-            let sumWeights = 0; let sumValues = 0;
-            // ★ 頂点だけでなく、±2ビン（計5ビン）の広い範囲で加重平均をとることでブレを吸収
-            for(let i = bestBinIndex - 2; i <= bestBinIndex + 2; i++) {
-                if(histogram[i]) { 
-                    sumWeights += histogram[i]; 
-                    sumValues += histogram[i] * (i * BIN_SIZE); 
-                }
-            }
-            
-            beatDuration = sumWeights > 0 ? sumValues / sumWeights : (bestBinIndex * BIN_SIZE);
-            
-            // ★ テンポが極端に速い場合（約181BPM以上）は、半分のテンポとして解釈する
-            if (beatDuration < 0.33) beatDuration *= 2; 
-
-            let calculatedBpm = Math.round(60 / beatDuration);
-            
-            // ★ 149や151など「5の倍数」からわずかに1だけズレた場合は、5の倍数に吸着（スナップ）させる
-            if (calculatedBpm % 5 === 1) calculatedBpm -= 1;
-            if (calculatedBpm % 5 === 4) calculatedBpm += 1;
 
             state.bpm = calculatedBpm;
             beatDuration = 60 / state.bpm;
-            console.log(`[GraNotes] BPM Applied (Auto): ${state.bpm}`);
+            console.log(`[GraNotes] BPM Applied (Auto via AutoCorrelation): ${state.bpm}`);
         }
 
         state.measureDuration = beatDuration * 4; 
