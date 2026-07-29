@@ -50,11 +50,13 @@ GraNotes.Analyzer = (function() {
         
         const hopSize = Math.floor(sampleRate * 0.01); 
 
+        // --- 1. BPM設定 (手動指定 or 自動推定) ---
+        let beatDuration = 0.5;
+
         // ★ Spectral Fluxを用いたオンセットエンベロープ(ノベルティ関数)の生成
-        const novelty = [];
+        const rawNovelty = [];
         const hitTimes = [];
         let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
-        let noveltySum = 0;
         
         for (let i = 0; i < lowData.length; i += hopSize) {
             let l = 0, m = 0, h = 0;
@@ -72,62 +74,88 @@ GraNotes.Analyzer = (function() {
                 hitTimes.push(i / sampleRate);
             }
             
-            // RMSエネルギーの増加分（半波整流）を合算して Spectral Flux を計算
+            // RMSエネルギーの増加分（半波整流）
             const dL = Math.max(0, l - tempPrevLow);
             const dM = Math.max(0, m - tempPrevMid);
             const dH = Math.max(0, h - tempPrevHigh);
             
-            const flux = dL + dM + dH;
-            novelty.push(flux);
-            noveltySum += flux;
+            // 【改善案1】重み付け: Low(キック等)を強調し、High(ハイハット等)を軽視する
+            const flux = (dL * 2.5) + (dM * 0.8) + (dH * 0.1);
+            rawNovelty.push(flux);
             
             tempPrevLow = l; 
             tempPrevMid = m; 
             tempPrevHigh = h;
         }
+
+        // 【改善案1】移動平均(スムージング)で細かい16分音符や裏拍のピークを潰す
+        const novelty = [];
+        const windowSize = 3; // hopSize=10ms なので ±3 = 約30ms の平滑化
+        let noveltySum = 0;
+
+        for (let i = 0; i < rawNovelty.length; i++) {
+            let sum = 0, count = 0;
+            for (let w = -windowSize; w <= windowSize; w++) {
+                if (i + w >= 0 && i + w < rawNovelty.length) {
+                    sum += rawNovelty[i + w];
+                    count++;
+                }
+            }
+            const val = sum / count;
+            novelty.push(val);
+            noveltySum += val;
+        }
         
         // 直流(DC)成分を取り除くため、平均を引く (Mean Subtraction)
-        // これにより自己相関のベースラインが安定し、周期性が明確になります。
         const noveltyMean = noveltySum / novelty.length;
         for (let i = 0; i < novelty.length; i++) {
             novelty[i] -= noveltyMean;
         }
-
-        // --- 1. BPM設定 (手動指定 or 自動推定) ---
-        let beatDuration = 0.5;
 
         if (manualBpm && manualBpm > 0) {
             state.bpm = manualBpm;
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Manual): ${state.bpm}`);
         } else {
-            // ★ 自己相関(Auto Correlation)によるBPM推定
+            // ★ 自己相関(Auto Correlation) + コームフィルタによるBPM推定
             let bestBpm = 120;
-            let maxAcf = -Infinity;
+            let maxScore = -Infinity;
             const frameRate = sampleRate / hopSize; 
             
             // 候補BPM範囲 70〜200 を 0.1 刻みで評価
             for (let bpm = 70; bpm <= 200; bpm += 0.1) {
                 const lag = (60 / bpm) * frameRate;
-                const lagInt = Math.floor(lag);
-                const lagFrac = lag - lagInt;
                 
-                let acf = 0;
-                let count = 0;
-                const maxI = novelty.length - lagInt - 1;
-                
-                for (let i = 0; i < maxI; i++) {
-                    // 線形補間による遅延サンプルの取得で精度を担保
-                    const delayed = novelty[i + lagInt] * (1 - lagFrac) + novelty[i + lagInt + 1] * lagFrac;
-                    acf += novelty[i] * delayed;
-                    count++;
+                // 特定のラグに対するACFを計算するヘルパー関数
+                function calcAcfAtLag(l) {
+                    const lInt = Math.floor(l);
+                    const lFrac = l - lInt;
+                    let acf = 0;
+                    let count = 0;
+                    const maxI = novelty.length - lInt - 1;
+                    
+                    for (let i = 0; i < maxI; i++) {
+                        const delayed = novelty[i + lInt] * (1 - lFrac) + novelty[i + lInt + 1] * lFrac;
+                        acf += novelty[i] * delayed;
+                        count++;
+                    }
+                    return count > 0 ? acf / count : 0;
                 }
+
+                // 【改善案2】Comb Filter: 1拍、2拍、4拍の相関を複合的に評価
+                const acf1 = calcAcfAtLag(lag);       // 1拍の相関
+                const acf2 = calcAcfAtLag(lag * 2);   // 2拍の相関
+                const acf4 = calcAcfAtLag(lag * 4);   // 4拍(1小節)の相関
                 
-                // サンプル数で正規化し、短いラグ（早いBPM）へのバイアスを防ぐ
-                if (count > 0) acf /= count;
+                // 1拍の強さだけでなく、2拍・4拍の周期性も持っているBPMを高く評価する
+                const score = acf1 + (0.5 * acf2) + (0.25 * acf4);
                 
-                if (acf > maxAcf) {
-                    maxAcf = acf;
+                // テンポが速すぎる場合（150超え）にはペナルティを与え、4/3倍(180等)を勝ちにくくする
+                const penalty = bpm > 150 ? (bpm - 150) * 0.0001 : 0;
+                const finalScore = score - penalty;
+
+                if (finalScore > maxScore) {
+                    maxScore = finalScore;
                     bestBpm = bpm;
                 }
             }
@@ -151,7 +179,7 @@ GraNotes.Analyzer = (function() {
 
             state.bpm = calculatedBpm;
             beatDuration = 60 / state.bpm;
-            console.log(`[GraNotes] BPM Applied (Auto via AutoCorrelation): ${state.bpm}`);
+            console.log(`[GraNotes] BPM Applied (Auto via ACF+CombFilter): ${state.bpm}`);
         }
 
         state.measureDuration = beatDuration * 4; 
@@ -367,7 +395,6 @@ GraNotes.Analyzer = (function() {
             const measureIndex = Math.floor((time - state.phaseOffset) / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
-            // 剰余(%)を使わずに進行度を計算し、範囲を確実に0.0〜1.0に収める
             let progressInMeasure = (time - state.phaseOffset - (measureIndex * state.measureDuration)) / state.measureDuration;
             if (progressInMeasure < 0) progressInMeasure = 0;
             if (progressInMeasure > 1) progressInMeasure = 1;
@@ -404,7 +431,7 @@ GraNotes.Analyzer = (function() {
         state.generatedNotes = noteGroups;
     }
 
-    // ★ BPM推定だけを単独で行うメソッドを追加
+    // ★ BPM推定だけを単独で行うメソッド (プレビュー時の非同期解析用)
     async function estimateBPM(buffer) {
         const duration = buffer.duration; 
         const sampleRate = buffer.sampleRate;
@@ -430,9 +457,8 @@ GraNotes.Analyzer = (function() {
         
         const hopSize = Math.floor(sampleRate * 0.01); 
 
-        const novelty = [];
+        const rawNovelty = [];
         let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
-        let noveltySum = 0;
         
         for (let i = 0; i < lowData.length; i += hopSize) {
             let l = 0, m = 0, h = 0;
@@ -449,13 +475,31 @@ GraNotes.Analyzer = (function() {
             const dM = Math.max(0, m - tempPrevMid);
             const dH = Math.max(0, h - tempPrevHigh);
             
-            const flux = dL + dM + dH;
-            novelty.push(flux);
-            noveltySum += flux;
+            // 【改善案1】重み付け: Low(キック等)を強調し、High(ハイハット等)を軽視する
+            const flux = (dL * 2.5) + (dM * 0.8) + (dH * 0.1);
+            rawNovelty.push(flux);
             
             tempPrevLow = l; 
             tempPrevMid = m; 
             tempPrevHigh = h;
+        }
+
+        // 【改善案1】移動平均(スムージング)で細かいピークを潰す
+        const novelty = [];
+        const windowSize = 3; 
+        let noveltySum = 0;
+
+        for (let i = 0; i < rawNovelty.length; i++) {
+            let sum = 0, count = 0;
+            for (let w = -windowSize; w <= windowSize; w++) {
+                if (i + w >= 0 && i + w < rawNovelty.length) {
+                    sum += rawNovelty[i + w];
+                    count++;
+                }
+            }
+            const val = sum / count;
+            novelty.push(val);
+            noveltySum += val;
         }
         
         const noveltyMean = noveltySum / novelty.length;
@@ -464,39 +508,48 @@ GraNotes.Analyzer = (function() {
         }
         
         let bestBpm = 120;
-        let maxAcf = -Infinity;
+        let maxScore = -Infinity;
         const frameRate = sampleRate / hopSize; 
         
         for (let bpm = 70; bpm <= 200; bpm += 0.1) {
             const lag = (60 / bpm) * frameRate;
-            const lagInt = Math.floor(lag);
-            const lagFrac = lag - lagInt;
             
-            let acf = 0;
-            let count = 0;
-            const maxI = novelty.length - lagInt - 1;
-            
-            for (let i = 0; i < maxI; i++) {
-                const delayed = novelty[i + lagInt] * (1 - lagFrac) + novelty[i + lagInt + 1] * lagFrac;
-                acf += novelty[i] * delayed;
-                count++;
+            function calcAcfAtLag(l) {
+                const lInt = Math.floor(l);
+                const lFrac = l - lInt;
+                let acf = 0;
+                let count = 0;
+                const maxI = novelty.length - lInt - 1;
+                
+                for (let i = 0; i < maxI; i++) {
+                    const delayed = novelty[i + lInt] * (1 - lFrac) + novelty[i + lInt + 1] * lFrac;
+                    acf += novelty[i] * delayed;
+                    count++;
+                }
+                return count > 0 ? acf / count : 0;
             }
-            if (count > 0) acf /= count;
+
+            // 【改善案2】Comb Filter: 1拍、2拍、4拍の相関を評価
+            const acf1 = calcAcfAtLag(lag);
+            const acf2 = calcAcfAtLag(lag * 2);
+            const acf4 = calcAcfAtLag(lag * 4);
             
-            if (acf > maxAcf) {
-                maxAcf = acf;
+            const score = acf1 + (0.5 * acf2) + (0.25 * acf4);
+            const penalty = bpm > 150 ? (bpm - 150) * 0.0001 : 0;
+            const finalScore = score - penalty;
+
+            if (finalScore > maxScore) {
+                maxScore = finalScore;
                 bestBpm = bpm;
             }
         }
         
         let calculatedBpm = Math.round(bestBpm);
         
-        // オクターブエラーの補正
         if (calculatedBpm <= 90) {
             calculatedBpm *= 2;
         }
         
-        // キリのいい数字へのスナップ処理
         const remainder = calculatedBpm % 10;
         if (remainder <= 2) {
             calculatedBpm -= remainder; 
