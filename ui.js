@@ -89,10 +89,13 @@ GraNotes.UI = (function() {
                                         <span id="custom-file-name" class="text-[11px] text-gray-300 truncate flex-1 pointer-events-auto font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">未選択</span>
                                     </div>
 
-                                    <div class="flex items-center space-x-2">
-                                        <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none w-24 shadow-inner pointer-events-auto">
-                                        <!-- ★ プレビューボタンが隠れないようにレイアウト調整 -->
-                                        <button id="btn-custom-preview" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-2 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto text-center">▶ プレビュー</button>
+                                    <div class="flex flex-col space-y-1 w-full">
+                                        <div class="flex items-center space-x-2">
+                                            <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner pointer-events-auto">
+                                            <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto">▶ プレビュー</button>
+                                        </div>
+                                        <!-- ★ 推定BPMの表示エリアを追加 -->
+                                        <div id="custom-bpm-estimate" class="text-[10px] text-teal-300 font-bold hidden cursor-pointer hover:text-white transition-colors pointer-events-auto text-right pr-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">推定BPM: 解析中...</div>
                                     </div>
                                 </div>
                             </div>
@@ -198,9 +201,57 @@ GraNotes.UI = (function() {
             localStorage.setItem('GraNotes_CustomBpm', e.target.value);
         });
 
-        btnPreview.addEventListener('click', () => {
+        // ★ プレビューボタン押下時に非同期でBPM解析を実行
+        btnPreview.addEventListener('click', async () => {
             if (currentCustomAudioUrl) {
-                playPreview();
+                playPreview(); // 音声再生はそのまま即開始
+                
+                const estimateEl = document.getElementById('custom-bpm-estimate');
+                if (estimateEl) {
+                    estimateEl.classList.remove('hidden');
+                    estimateEl.textContent = '推定BPM: 解析中...';
+                    
+                    try {
+                        const state = GraNotes.State;
+                        if (!state.audioContext) {
+                            state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        }
+                        if (state.audioContext.state === 'suspended') {
+                            await state.audioContext.resume();
+                        }
+
+                        // プレビューと同時に音声をfetchしてデコードし、キャッシュに保存
+                        let audioBuffer = state.audioBuffer;
+                        if (!audioBuffer || state.currentAudioUrl !== currentCustomAudioUrl) {
+                            const response = await fetch(currentCustomAudioUrl);
+                            const arrayBuffer = await response.arrayBuffer();
+                            audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+                            state.audioBuffer = audioBuffer;
+                            state.currentAudioUrl = currentCustomAudioUrl;
+                        }
+
+                        // Analyzer側の関数を呼び出してBPMを推定
+                        if(GraNotes.Analyzer && GraNotes.Analyzer.estimateBPM) {
+                            const bpm = await GraNotes.Analyzer.estimateBPM(audioBuffer);
+                            estimateEl.textContent = `推定BPM: ${bpm} (タップして反映)`;
+                            
+                            // テキストをタップすると入力欄に自動反映
+                            estimateEl.onclick = () => {
+                                bpmInput.value = bpm;
+                                localStorage.setItem('GraNotes_CustomBpm', bpm);
+                                estimateEl.textContent = `反映しました: ${bpm}`;
+                                setTimeout(() => {
+                                    estimateEl.textContent = `推定BPM: ${bpm} (タップして反映)`;
+                                }, 1500);
+                            };
+                        } else {
+                            estimateEl.textContent = '推定BPM: 機能未実装';
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        estimateEl.textContent = '推定BPM: 解析失敗';
+                    }
+                }
             } else {
                 showMessage("楽曲ファイルを選択してください", true);
             }
@@ -672,14 +723,20 @@ GraNotes.UI = (function() {
                 await state.audioContext.resume();
             }
 
-            const response = await fetch(audioUrl);
-            if (!response.ok) throw new Error("楽曲ファイルが見つかりません");
-            const arrayBuffer = await response.arrayBuffer();
+            // ★ キャッシュがあれば再読み込みをスキップして高速化
+            if (state.audioBuffer && state.currentAudioUrl === audioUrl) {
+                loadingMsg.textContent = "譜面を自動生成中...";
+            } else {
+                const response = await fetch(audioUrl);
+                if (!response.ok) throw new Error("楽曲ファイルが見つかりません (またはCORS制限)");
+                const arrayBuffer = await response.arrayBuffer();
+                
+                loadingMsg.textContent = "音声をデコード中...";
+                state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
+                state.currentAudioUrl = audioUrl;
+                loadingMsg.textContent = "譜面を自動生成中...";
+            }
             
-            loadingMsg.textContent = "音声をデコード中...";
-            state.audioBuffer = await state.audioContext.decodeAudioData(arrayBuffer);
-            
-            loadingMsg.textContent = "譜面を自動生成中...";
             setTimeout(async () => {
                 try {
                     const maxSliderIntervalBeat = minIntervalBeat * 3.0; 
@@ -797,5 +854,3 @@ GraNotes.UI = (function() {
 
     return window.GraNotesUI;
 })();
-
-

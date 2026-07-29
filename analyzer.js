@@ -404,7 +404,111 @@ GraNotes.Analyzer = (function() {
         state.generatedNotes = noteGroups;
     }
 
+    // ★ BPM推定だけを単独で行うメソッドを追加
+    async function estimateBPM(buffer) {
+        const duration = buffer.duration; 
+        const sampleRate = buffer.sampleRate;
+        const offlineCtx = new OfflineAudioContext(3, Math.ceil(duration * sampleRate), sampleRate);
+        const source = offlineCtx.createBufferSource(); 
+        source.buffer = buffer;
+
+        const config = GraNotes.ENGINE_CONFIG || { freq: 800, q: 0.5 };
+        const lowFilter = offlineCtx.createBiquadFilter(); lowFilter.type = 'lowpass'; lowFilter.frequency.value = 150;
+        const midFilter = offlineCtx.createBiquadFilter(); midFilter.type = 'bandpass'; midFilter.frequency.value = config.freq; midFilter.Q.value = config.q;
+        const highFilter = offlineCtx.createBiquadFilter(); highFilter.type = 'highpass'; highFilter.frequency.value = 3500;
+
+        const merger = offlineCtx.createChannelMerger(3);
+        source.connect(lowFilter); lowFilter.connect(merger, 0, 0); 
+        source.connect(midFilter); midFilter.connect(merger, 0, 1);
+        source.connect(highFilter); highFilter.connect(merger, 0, 2); 
+        merger.connect(offlineCtx.destination); source.start();
+
+        const renderedBuffer = await offlineCtx.startRendering();
+        const lowData = renderedBuffer.getChannelData(0); 
+        const midData = renderedBuffer.getChannelData(1); 
+        const highData = renderedBuffer.getChannelData(2);
+        
+        const hopSize = Math.floor(sampleRate * 0.01); 
+
+        const novelty = [];
+        let tempPrevLow = 0, tempPrevMid = 0, tempPrevHigh = 0;
+        let noveltySum = 0;
+        
+        for (let i = 0; i < lowData.length; i += hopSize) {
+            let l = 0, m = 0, h = 0;
+            for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
+                l += lowData[i+j]*lowData[i+j]; 
+                m += midData[i+j]*midData[i+j]; 
+                h += highData[i+j]*highData[i+j]; 
+            }
+            l = Math.sqrt(l/hopSize); 
+            m = Math.sqrt(m/hopSize); 
+            h = Math.sqrt(h/hopSize);
+            
+            const dL = Math.max(0, l - tempPrevLow);
+            const dM = Math.max(0, m - tempPrevMid);
+            const dH = Math.max(0, h - tempPrevHigh);
+            
+            const flux = dL + dM + dH;
+            novelty.push(flux);
+            noveltySum += flux;
+            
+            tempPrevLow = l; 
+            tempPrevMid = m; 
+            tempPrevHigh = h;
+        }
+        
+        const noveltyMean = noveltySum / novelty.length;
+        for (let i = 0; i < novelty.length; i++) {
+            novelty[i] -= noveltyMean;
+        }
+        
+        let bestBpm = 120;
+        let maxAcf = -Infinity;
+        const frameRate = sampleRate / hopSize; 
+        
+        for (let bpm = 70; bpm <= 200; bpm += 0.1) {
+            const lag = (60 / bpm) * frameRate;
+            const lagInt = Math.floor(lag);
+            const lagFrac = lag - lagInt;
+            
+            let acf = 0;
+            let count = 0;
+            const maxI = novelty.length - lagInt - 1;
+            
+            for (let i = 0; i < maxI; i++) {
+                const delayed = novelty[i + lagInt] * (1 - lagFrac) + novelty[i + lagInt + 1] * lagFrac;
+                acf += novelty[i] * delayed;
+                count++;
+            }
+            if (count > 0) acf /= count;
+            
+            if (acf > maxAcf) {
+                maxAcf = acf;
+                bestBpm = bpm;
+            }
+        }
+        
+        let calculatedBpm = Math.round(bestBpm);
+        
+        // オクターブエラーの補正
+        if (calculatedBpm <= 90) {
+            calculatedBpm *= 2;
+        }
+        
+        // キリのいい数字へのスナップ処理
+        const remainder = calculatedBpm % 10;
+        if (remainder <= 2) {
+            calculatedBpm -= remainder; 
+        } else if (remainder >= 8) {
+            calculatedBpm += (10 - remainder); 
+        }
+
+        return calculatedBpm;
+    }
+
     return {
-        generateMap: generateMap
+        generateMap: generateMap,
+        estimateBPM: estimateBPM
     };
 })();
