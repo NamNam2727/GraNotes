@@ -21,7 +21,7 @@ GraNotes.Analyzer = (function() {
         return (zc * sr) / length; 
     }
 
-    // ★ プレビュー時にUIから呼ばれるBPM推定専用関数（復活・改良版）
+    // ★ UIプレビュー用のBPM推定 (generateMap内の高精度ACFと全く同じロジック)
     async function estimateBPM(buffer) {
         const config = GraNotes.ENGINE_CONFIG;
         const duration = buffer.duration; 
@@ -197,11 +197,11 @@ GraNotes.Analyzer = (function() {
             m = Math.sqrt(m/hopSize); 
             h = Math.sqrt(h/hopSize);
             
+            // キック（Low）を重視し、ハイハット（High）を軽視する重み付け
             const dL = Math.max(0, l - tempPrevLow);
             const dM = Math.max(0, m - tempPrevMid);
             const dH = Math.max(0, h - tempPrevHigh);
             
-            // キック（Low）を重視し、ハイハット（High）を軽視する重み付け
             const flux = (dL * 2.5) + (dM * 0.8) + (dH * 0.1);
             rawNovelty.push(flux);
             
@@ -390,19 +390,19 @@ GraNotes.Analyzer = (function() {
 
         for (let i = 0; i < lowData.length; i += hopSize) {
             const currentTime = i / sampleRate;
-            // Phase Offset を適用して小節・チャンクの境界を正確に計算
-            const chunkIdx = Math.floor((currentTime - state.phaseOffset) / CHUNK_DURATION);
+            // ★ 旧版(ゴールデンマスター)に完全一致させるため、チャンク区切りから phaseOffset を除去
+            const chunkIdx = Math.floor(currentTime / CHUNK_DURATION);
             
             if (chunkIdx > currentChunkIndex) {
                 chunks.push({
-                    index: chunkIdx, startTime: state.phaseOffset + chunkIdx * CHUNK_DURATION,
+                    index: chunkIdx, startTime: chunkIdx * CHUNK_DURATION,
                     features: new Array(24).fill(0), notes: [], mappedTo: null, prngState: prng.getState()
                 });
                 currentChunkIndex = chunkIdx;
             }
 
             let l=0, m=0, h=0;
-            for (let j = 0; j < hopSize && (i+j) < lowData.length; j++) { 
+            for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
                 l += lowData[i+j]*lowData[i+j]; m += midData[i+j]*midData[i+j]; h += highData[i+j]*highData[i+j]; 
             }
             l = Math.sqrt(l/hopSize); m = Math.sqrt(m/hopSize); h = Math.sqrt(h/hopSize);
@@ -415,7 +415,8 @@ GraNotes.Analyzer = (function() {
             
             if (chunkIdx >= 0 && chunkIdx < chunks.length) {
                 const chunk = chunks[chunkIdx];
-                const beatIndex = Math.floor(((currentTime - state.phaseOffset) % CHUNK_DURATION) / beatDuration);
+                // ★ 旧版(ゴールデンマスター)に完全一致させるため、特徴量登録から phaseOffset を除去
+                const beatIndex = Math.floor((currentTime % CHUNK_DURATION) / beatDuration);
                 if (beatIndex >= 0 && beatIndex < 8) {
                     if (isLowHit) chunk.features[beatIndex * 3 + 0] += 1;
                     if (isMidHit) chunk.features[beatIndex * 3 + 1] += 1;
@@ -440,7 +441,8 @@ GraNotes.Analyzer = (function() {
             }
         }
 
-        let allNotes = [];
+        // ★ ノーツの抽出と間引き処理を旧版(ゴールデンマスター)のチャンク単位での実行へ完全復元
+        let rawNotes = [];
         chunks.forEach((chunk) => {
             let sourceNotes = chunk.notes;
             if (chunk.mappedTo !== null) {
@@ -448,23 +450,22 @@ GraNotes.Analyzer = (function() {
                 const timeOffset = chunk.startTime - sourceChunk.startTime;
                 sourceNotes = sourceChunk.notes.map(n => ({ time: n.time + timeOffset, pitch: n.pitch, seedVal: n.seedVal }));
             }
-            sourceNotes.forEach(note => allNotes.push(note));
+            
+            let lastTime = -100;
+            sourceNotes.forEach(note => {
+                if (note.time - lastTime >= minIntervalSeconds) { 
+                    rawNotes.push(note); 
+                    lastTime = note.time; 
+                }
+            });
         });
 
-        allNotes.sort((a, b) => a.time - b.time);
-
-        let rawNotes = [];
-        let lastTime = -100;
-        allNotes.forEach(note => {
-            if (note.time - lastTime >= minIntervalSeconds) { 
-                rawNotes.push(note); 
-                lastTime = note.time; 
-            }
-        });
+        rawNotes.sort((a, b) => a.time - b.time);
 
         // --- 3. ノーツの統合と相対ピッチによる座標計算 ---
         const notesByMeasure = {};
         rawNotes.forEach(note => {
+            // ★ 指定通り phaseOffset を適用
             const measureIndex = Math.floor((note.time - state.phaseOffset) / state.measureDuration);
             if (!notesByMeasure[measureIndex]) notesByMeasure[measureIndex] = [];
             notesByMeasure[measureIndex].push(note);
@@ -505,9 +506,11 @@ GraNotes.Analyzer = (function() {
 
         rawNotes.forEach((note, index) => {
             const time = note.time;
+            // ★ 指定通り phaseOffset を適用
             const measureIndex = Math.floor((time - state.phaseOffset) / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
+            // ★ 指定通り phaseOffset を適用
             let progressInMeasure = (time - state.phaseOffset - (measureIndex * state.measureDuration)) / state.measureDuration;
             if (progressInMeasure < 0) progressInMeasure = 0;
             if (progressInMeasure > 1) progressInMeasure = 1;
@@ -545,7 +548,7 @@ GraNotes.Analyzer = (function() {
     }
 
     return {
-        estimateBPM: estimateBPM, // ★ 追加
+        estimateBPM: estimateBPM,
         generateMap: generateMap
     };
 })();
