@@ -73,8 +73,10 @@ GraNotes.UI = (function() {
                         <div class="flex-1 w-full flex items-center px-4 z-10 relative">
                             <div id="carousel-container" class="relative w-28 h-full flex justify-center items-center flex-shrink-0" style="touch-action: none; cursor: grab;">
                             </div>
-                            <div class="ml-5 flex-1 flex flex-col justify-center" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
-                                <h2 id="music-title" class="text-lg font-bold text-white mb-1 leading-tight"></h2>
+                            <!-- ★ min-w-0 を追加して、親コンテナが押し広げられるのを防ぎます -->
+                            <div class="ml-5 flex-1 flex flex-col justify-center min-w-0" style="text-shadow: 0 2px 5px rgba(0,0,0,0.9);">
+                                <!-- ★ h2 に truncate を追加し、長いタイトルも省略します -->
+                                <h2 id="music-title" class="text-lg font-bold text-white mb-1 leading-tight truncate"></h2>
                                 <p id="music-bpm" class="text-sm text-teal-300 font-mono font-bold mb-2"></p>
                                 <div id="music-desc" class="text-xs text-gray-200 leading-relaxed drop-shadow-md max-h-24 overflow-y-auto"></div>
                                 
@@ -83,19 +85,22 @@ GraNotes.UI = (function() {
                                     <div class="text-[10px] text-teal-300 font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">mp3 または mp4 を選択してください</div>
                                     
                                     <div class="flex items-center space-x-2">
-                                        <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow pointer-events-auto">端末から選択</button>
-                                        <!-- ★ iOS等で確実にmp3が選べるように拡張子を明示 -->
+                                        <!-- ★ ボタンが潰れないように flex-shrink-0 を追加 -->
+                                        <button id="custom-file-btn" class="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[11px] px-3 py-2 rounded border border-gray-500 whitespace-nowrap shadow pointer-events-auto flex-shrink-0">端末から選択</button>
                                         <input type="file" id="custom-file-input" accept=".mp3,audio/mpeg,audio/mp3,.mp4,video/mp4,audio/*,video/*" class="hidden">
-                                        <span id="custom-file-name" class="text-[11px] text-gray-300 truncate flex-1 pointer-events-auto font-bold" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">未選択</span>
+                                        <!-- ★ min-w-0 を追加して truncate を正常に機能させます -->
+                                        <span id="custom-file-name" class="text-[11px] text-gray-300 truncate flex-1 pointer-events-auto font-bold min-w-0" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">未選択</span>
                                     </div>
 
                                     <div class="flex flex-col space-y-1 w-full">
                                         <div class="flex items-center space-x-2">
-                                            <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner pointer-events-auto">
-                                            <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto">▶ プレビュー</button>
+                                            <!-- ★ min-w-0 を追加 -->
+                                            <input type="number" id="custom-bpm" placeholder="BPM (空欄で自動検出)" class="bg-gray-800 text-white text-[11px] p-2 rounded border border-gray-600 focus:border-teal-400 outline-none flex-1 shadow-inner pointer-events-auto min-w-0">
+                                            <!-- ★ flex-shrink-0 を追加 -->
+                                            <button id="btn-custom-preview" class="bg-teal-600 hover:bg-teal-500 text-white text-[11px] px-4 py-2 rounded font-bold whitespace-nowrap shadow pointer-events-auto flex-shrink-0">▶ プレビュー</button>
                                         </div>
-                                        <!-- ★ 推定BPMの表示エリアを追加 -->
-                                        <div id="custom-bpm-estimate" class="text-[10px] text-teal-300 font-bold hidden cursor-pointer hover:text-white transition-colors pointer-events-auto text-right pr-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">推定BPM: 解析中...</div>
+                                        <!-- ★ テキストを左揃え(text-left)にして、BPM欄の真下に配置します -->
+                                        <div id="custom-bpm-estimate" class="text-[10px] text-teal-300 font-bold hidden cursor-pointer hover:text-white transition-colors pointer-events-auto text-left pl-1" style="text-shadow: 0 1px 2px rgba(0,0,0,0.8);">推定BPM: 解析中...</div>
                                     </div>
                                 </div>
                             </div>
