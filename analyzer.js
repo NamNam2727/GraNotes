@@ -5,7 +5,7 @@ window.GraNotes = window.GraNotes || {};
 GraNotes.Analyzer = (function() {
     
     // =====================================================================
-    // FFT (高速フーリエ変換) と Mel Filter Bank による本格的なMIR実装
+    // 新規追加: FFT (高速フーリエ変換) と Mel Filter Bank による本格的なMIR実装
     // =====================================================================
     class FFT {
         constructor(size) {
@@ -207,90 +207,46 @@ GraNotes.Analyzer = (function() {
         
         // FFTベースのMel Spectral Fluxで高品質なNoveltyを生成
         const novelty = computeNovelty(buffer);
-        const frameRate = sampleRate / hopSize; 
 
-        // ★ 15秒ごとの区間（チャンク）に分割して独立してBPMを推定する
-        const segmentDuration = 15.0; 
-        const framesPerSegment = Math.floor(segmentDuration * frameRate);
-        const numSegments = Math.max(1, Math.floor(novelty.length / framesPerSegment));
-        const estimatedBpms = [];
-
-        for (let segIdx = 0; segIdx < numSegments; segIdx++) {
-            const startFrame = segIdx * framesPerSegment;
-            const endFrame = Math.min(startFrame + framesPerSegment, novelty.length);
-            const novelty_seg = novelty.slice(startFrame, endFrame);
-            
-            function calcAcfAtLag(l) {
-                const lInt = Math.floor(l);
-                const lFrac = l - lInt;
-                let acf = 0;
-                let count = 0;
-                const maxI = novelty_seg.length - lInt - 1;
-                
-                for (let i = 0; i < maxI; i++) {
-                    const delayed = novelty_seg[i + lInt] * (1 - lFrac) + novelty_seg[i + lInt + 1] * lFrac;
-                    acf += novelty_seg[i] * delayed;
-                    count++;
-                }
-                return count > 0 ? acf / count : 0;
-            }
-
-            const variance = calcAcfAtLag(0) || 1;
-            
-            let maxScore = -Infinity;
-            let bestIdx = -1;
-            const scores = [];
-            
-            let i = 0;
-            for (let bpm = 70; bpm <= 200; bpm += 0.1) {
-                const lag = (60 / bpm) * frameRate;
-                
-                const acf1 = calcAcfAtLag(lag) / variance;
-                const acf2 = calcAcfAtLag(lag * 2) / variance;
-                const acf4 = calcAcfAtLag(lag * 4) / variance;
-                const acfHalf = calcAcfAtLag(lag * 0.5) / variance; 
-                
-                const score = acf1 + (0.5 * acf2) + (0.25 * acf4) - (0.25 * acfHalf);
-                
-                const logBpm = Math.log2(bpm / 120);
-                const tempoWeight = Math.exp(-0.5 * Math.pow(logBpm / 0.5, 2)); 
-                
-                const finalScore = score * tempoWeight;
-
-                scores.push(finalScore);
-                if (finalScore > maxScore) {
-                    maxScore = finalScore;
-                    bestIdx = i;
-                }
-                i++;
-            }
-            
-            // ★ 放物線ピーク補間 (Parabolic Peak Interpolation)
-            // ACFの最大スコアの前後を用いて、小数点のさらに細かい真のピークを割り出す
-            let p = 0;
-            if (bestIdx > 0 && bestIdx < scores.length - 1) {
-                const s1 = scores[bestIdx - 1];
-                const s2 = scores[bestIdx];
-                const s3 = scores[bestIdx + 1];
-                const denom = (s1 - 2 * s2 + s3);
-                if (denom !== 0) {
-                    p = 0.5 * (s1 - s3) / denom;
-                }
-            }
-            
-            const trueIdx = bestIdx + p;
-            const segBpm = 70 + trueIdx * 0.1;
-            estimatedBpms.push(segBpm);
-        }
-        
-        // ★ 各区間で推定されたBPMの中央値(Median)を採用し、外れ値を除外
-        estimatedBpms.sort((a, b) => a - b);
         let bestBpm = 120;
-        if (estimatedBpms.length > 0) {
-            if (estimatedBpms.length % 2 === 0) {
-                bestBpm = (estimatedBpms[estimatedBpms.length / 2 - 1] + estimatedBpms[estimatedBpms.length / 2]) / 2;
-            } else {
-                bestBpm = estimatedBpms[Math.floor(estimatedBpms.length / 2)];
+        let maxScore = -Infinity;
+        const frameRate = sampleRate / hopSize; 
+        
+        function calcAcfAtLag(l) {
+            const lInt = Math.floor(l);
+            const lFrac = l - lInt;
+            let acf = 0;
+            let count = 0;
+            const maxI = novelty.length - lInt - 1;
+            
+            for (let i = 0; i < maxI; i++) {
+                const delayed = novelty[i + lInt] * (1 - lFrac) + novelty[i + lInt + 1] * lFrac;
+                acf += novelty[i] * delayed;
+                count++;
+            }
+            return count > 0 ? acf / count : 0;
+        }
+
+        const variance = calcAcfAtLag(0) || 1;
+        
+        for (let bpm = 70; bpm <= 200; bpm += 0.1) {
+            const lag = (60 / bpm) * frameRate;
+            
+            const acf1 = calcAcfAtLag(lag) / variance;
+            const acf2 = calcAcfAtLag(lag * 2) / variance;
+            const acf4 = calcAcfAtLag(lag * 4) / variance;
+            const acfHalf = calcAcfAtLag(lag * 0.5) / variance; 
+            
+            const score = acf1 + (0.5 * acf2) + (0.25 * acf4) - (0.25 * acfHalf);
+            
+            const logBpm = Math.log2(bpm / 120);
+            const tempoWeight = Math.exp(-0.5 * Math.pow(logBpm / 0.5, 2)); 
+            
+            const finalScore = score * tempoWeight;
+
+            if (finalScore > maxScore) {
+                maxScore = finalScore;
+                bestBpm = bpm;
             }
         }
         
@@ -300,7 +256,12 @@ GraNotes.Analyzer = (function() {
             calculatedBpm *= 2;
         }
         
-        // ★ 10刻みのスナップ処理を撤廃し、ピーク補間で得られた微細なBPM(151や174など)を優先・尊重する
+        const remainder = calculatedBpm % 10;
+        if (remainder <= 2) {
+            calculatedBpm -= remainder; 
+        } else if (remainder >= 8) {
+            calculatedBpm += (10 - remainder); 
+        }
 
         return calculatedBpm;
     }
@@ -346,89 +307,45 @@ GraNotes.Analyzer = (function() {
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Manual): ${state.bpm}`);
         } else {
-            const frameRate = sampleRate / hopSize; 
-
-            // ★ 15秒ごとの区間（チャンク）に分割して独立してBPMを推定する
-            const segmentDuration = 15.0; 
-            const framesPerSegment = Math.floor(segmentDuration * frameRate);
-            const numSegments = Math.max(1, Math.floor(novelty.length / framesPerSegment));
-            const estimatedBpms = [];
-
-            for (let segIdx = 0; segIdx < numSegments; segIdx++) {
-                const startFrame = segIdx * framesPerSegment;
-                const endFrame = Math.min(startFrame + framesPerSegment, novelty.length);
-                const novelty_seg = novelty.slice(startFrame, endFrame);
-                
-                function calcAcfAtLag(l) {
-                    const lInt = Math.floor(l);
-                    const lFrac = l - lInt;
-                    let acf = 0;
-                    let count = 0;
-                    const maxI = novelty_seg.length - lInt - 1;
-                    
-                    for (let i = 0; i < maxI; i++) {
-                        const delayed = novelty_seg[i + lInt] * (1 - lFrac) + novelty_seg[i + lInt + 1] * lFrac;
-                        acf += novelty_seg[i] * delayed;
-                        count++;
-                    }
-                    return count > 0 ? acf / count : 0;
-                }
-
-                const variance = calcAcfAtLag(0) || 1;
-                
-                let maxScore = -Infinity;
-                let bestIdx = -1;
-                const scores = [];
-                
-                let i = 0;
-                for (let bpm = 70; bpm <= 200; bpm += 0.1) {
-                    const lag = (60 / bpm) * frameRate;
-                    
-                    const acf1 = calcAcfAtLag(lag) / variance;
-                    const acf2 = calcAcfAtLag(lag * 2) / variance;
-                    const acf4 = calcAcfAtLag(lag * 4) / variance;
-                    const acfHalf = calcAcfAtLag(lag * 0.5) / variance; 
-                    
-                    const score = acf1 + (0.5 * acf2) + (0.25 * acf4) - (0.25 * acfHalf);
-                    
-                    const logBpm = Math.log2(bpm / 120);
-                    const tempoWeight = Math.exp(-0.5 * Math.pow(logBpm / 0.5, 2)); 
-                    
-                    const finalScore = score * tempoWeight;
-
-                    scores.push(finalScore);
-                    if (finalScore > maxScore) {
-                        maxScore = finalScore;
-                        bestIdx = i;
-                    }
-                    i++;
-                }
-                
-                // ★ 放物線ピーク補間 (Parabolic Peak Interpolation)
-                let p = 0;
-                if (bestIdx > 0 && bestIdx < scores.length - 1) {
-                    const s1 = scores[bestIdx - 1];
-                    const s2 = scores[bestIdx];
-                    const s3 = scores[bestIdx + 1];
-                    const denom = (s1 - 2 * s2 + s3);
-                    if (denom !== 0) {
-                        p = 0.5 * (s1 - s3) / denom;
-                    }
-                }
-                
-                const trueIdx = bestIdx + p;
-                const segBpm = 70 + trueIdx * 0.1;
-                estimatedBpms.push(segBpm);
-            }
-            
-            // ★ 各区間で推定されたBPMの中央値(Median)を採用し、外れ値を除外
-            estimatedBpms.sort((a, b) => a - b);
             let bestBpm = 120;
-            if (estimatedBpms.length > 0) {
-                if (estimatedBpms.length % 2 === 0) {
-                    bestBpm = (estimatedBpms[estimatedBpms.length / 2 - 1] + estimatedBpms[estimatedBpms.length / 2]) / 2;
-                } else {
-                    bestBpm = estimatedBpms[Math.floor(estimatedBpms.length / 2)];
+            let maxScore = -Infinity;
+            const frameRate = sampleRate / hopSize; 
+            
+            function calcAcfAtLag(l) {
+                const lInt = Math.floor(l);
+                const lFrac = l - lInt;
+                let acf = 0;
+                let count = 0;
+                const maxI = novelty.length - lInt - 1;
+                
+                for (let i = 0; i < maxI; i++) {
+                    const delayed = novelty[i + lInt] * (1 - lFrac) + novelty[i + lInt + 1] * lFrac;
+                    acf += novelty[i] * delayed;
+                    count++;
+                }
+                return count > 0 ? acf / count : 0;
+            }
+
+            const variance = calcAcfAtLag(0) || 1;
+            
+            for (let bpm = 70; bpm <= 200; bpm += 0.1) {
+                const lag = (60 / bpm) * frameRate;
+                
+                const acf1 = calcAcfAtLag(lag) / variance;
+                const acf2 = calcAcfAtLag(lag * 2) / variance;
+                const acf4 = calcAcfAtLag(lag * 4) / variance;
+                const acfHalf = calcAcfAtLag(lag * 0.5) / variance; 
+                
+                const score = acf1 + (0.5 * acf2) + (0.25 * acf4) - (0.25 * acfHalf);
+                
+                const logBpm = Math.log2(bpm / 120);
+                const tempoWeight = Math.exp(-0.5 * Math.pow(logBpm / 0.5, 2)); 
+                
+                const finalScore = score * tempoWeight;
+
+                if (finalScore > maxScore) {
+                    maxScore = finalScore;
+                    bestBpm = bpm;
                 }
             }
             
@@ -439,8 +356,13 @@ GraNotes.Analyzer = (function() {
                 calculatedBpm *= 2;
             }
             
-            // ★ 10刻みのスナップ処理を撤廃し、ピーク補間で得られた微細なBPM(151や174など)を優先・尊重する
-            
+            const remainder = calculatedBpm % 10;
+            if (remainder <= 2) {
+                calculatedBpm -= remainder; 
+            } else if (remainder >= 8) {
+                calculatedBpm += (10 - remainder); 
+            }
+
             state.bpm = calculatedBpm;
             beatDuration = 60 / state.bpm;
             console.log(`[GraNotes] BPM Applied (Auto via FFT SpectralFlux): ${state.bpm}`);
