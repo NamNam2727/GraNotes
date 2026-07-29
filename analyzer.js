@@ -441,8 +441,7 @@ GraNotes.Analyzer = (function() {
             }
         }
 
-        // ★ ノーツの抽出と間引き処理を旧版(ゴールデンマスター)のチャンク単位での実行へ完全復元
-        let rawNotes = [];
+        let allNotes = [];
         chunks.forEach((chunk) => {
             let sourceNotes = chunk.notes;
             if (chunk.mappedTo !== null) {
@@ -450,17 +449,21 @@ GraNotes.Analyzer = (function() {
                 const timeOffset = chunk.startTime - sourceChunk.startTime;
                 sourceNotes = sourceChunk.notes.map(n => ({ time: n.time + timeOffset, pitch: n.pitch, seedVal: n.seedVal }));
             }
-            
-            let lastTime = -100;
-            sourceNotes.forEach(note => {
-                if (note.time - lastTime >= minIntervalSeconds) { 
-                    rawNotes.push(note); 
-                    lastTime = note.time; 
-                }
-            });
+            sourceNotes.forEach(note => allNotes.push(note));
         });
 
-        rawNotes.sort((a, b) => a.time - b.time);
+        // 完全に時間順に並べ替える
+        allNotes.sort((a, b) => a.time - b.time);
+
+        // 並べ替え後に間引きを行う（チャンク境界の重複・逆走を完全に排除）
+        let rawNotes = [];
+        let lastTime = -100;
+        allNotes.forEach(note => {
+            if (note.time - lastTime >= minIntervalSeconds) { 
+                rawNotes.push(note); 
+                lastTime = note.time; 
+            }
+        });
 
         // --- 3. ノーツの統合と相対ピッチによる座標計算 ---
         const notesByMeasure = {};
@@ -508,7 +511,10 @@ GraNotes.Analyzer = (function() {
             const measureIndex = Math.floor(time / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
-            let progressInMeasure = (time % state.measureDuration) / state.measureDuration;
+            // 剰余(%)を使わずに進行度を計算し、範囲を確実に0.0〜1.0に収める
+            let progressInMeasure = (time - (measureIndex * state.measureDuration)) / state.measureDuration;
+            if (progressInMeasure < 0) progressInMeasure = 0;
+            if (progressInMeasure > 1) progressInMeasure = 1;
 
             const x = isTopRow ? 0.1 + (progressInMeasure * 0.8) : 0.9 - (progressInMeasure * 0.8);
 
