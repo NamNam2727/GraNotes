@@ -182,6 +182,7 @@ GraNotes.Analyzer = (function() {
     }
     // =====================================================================
 
+
     function cosineSimilarity(vecA, vecB) {
         let dotP = 0, nA = 0, nB = 0;
         for (let i = 0; i < vecA.length; i++) { 
@@ -549,7 +550,7 @@ GraNotes.Analyzer = (function() {
             }
 
             let l=0, m=0, h=0;
-            for (let j = 0; j < hopSize && (i+j) < lowData.length; j++) { 
+            for (let j = 0; j < hopSize && (i + j) < lowData.length; j++) { 
                 l += lowData[i+j]*lowData[i+j]; m += midData[i+j]*midData[i+j]; h += highData[i+j]*highData[i+j]; 
             }
             l = Math.sqrt(l/hopSize); m = Math.sqrt(m/hopSize); h = Math.sqrt(h/hopSize);
