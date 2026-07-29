@@ -465,8 +465,7 @@ GraNotes.Analyzer = (function() {
         // --- 3. ノーツの統合と相対ピッチによる座標計算 ---
         const notesByMeasure = {};
         rawNotes.forEach(note => {
-            // ★ 指定通り phaseOffset を適用
-            const measureIndex = Math.floor((note.time - state.phaseOffset) / state.measureDuration);
+            const measureIndex = Math.floor(note.time / state.measureDuration);
             if (!notesByMeasure[measureIndex]) notesByMeasure[measureIndex] = [];
             notesByMeasure[measureIndex].push(note);
         });
@@ -506,14 +505,10 @@ GraNotes.Analyzer = (function() {
 
         rawNotes.forEach((note, index) => {
             const time = note.time;
-            // ★ 指定通り phaseOffset を適用
-            const measureIndex = Math.floor((time - state.phaseOffset) / state.measureDuration);
+            const measureIndex = Math.floor(time / state.measureDuration);
             const isTopRow = (measureIndex % 2 === 0); 
             
-            // ★ 指定通り phaseOffset を適用
-            let progressInMeasure = (time - state.phaseOffset - (measureIndex * state.measureDuration)) / state.measureDuration;
-            if (progressInMeasure < 0) progressInMeasure = 0;
-            if (progressInMeasure > 1) progressInMeasure = 1;
+            let progressInMeasure = (time % state.measureDuration) / state.measureDuration;
 
             const x = isTopRow ? 0.1 + (progressInMeasure * 0.8) : 0.9 - (progressInMeasure * 0.8);
 
@@ -530,7 +525,7 @@ GraNotes.Analyzer = (function() {
                 const isConnected = isSoundConnected(lastNode.time, time);
                 
                 if ((time - lastNode.time <= maxSliderIntervalSeconds) && 
-                    (Math.floor((lastNode.time - state.phaseOffset) / state.measureDuration) === measureIndex) &&
+                    (Math.floor(lastNode.time / state.measureDuration) === measureIndex) &&
                     isConnected) {
                     isSameGroup = true;
                 }
